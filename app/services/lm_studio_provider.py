@@ -12,6 +12,7 @@ import time
 import httpx
 
 from app.domain.llm import (
+    AvailableModel,
     GenerationConfig,
     GenerationMetrics,
     GenerationResult,
@@ -24,6 +25,29 @@ _DEFAULT_EXTRA_BODY: dict[str, object] = {"reasoning_effort": "none"}
 # disabling "thinking", it can spend its entire max_new_tokens budget on
 # reasoning_content and never emit an actual answer. Not a general claim
 # about every model LM Studio can serve.
+
+
+def list_available_models(
+    base_url: str = "http://localhost:1234", timeout: float = 5.0
+) -> list[AvailableModel]:
+    """Lists models LM Studio currently knows about (loaded or not), for GET /models."""
+    try:
+        response = httpx.get(f"{base_url.rstrip('/')}/api/v0/models", timeout=timeout)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise LlmError(
+            LlmErrorCode.SERVER_UNAVAILABLE, f"LM Studio model listesi alınamadı: {exc}"
+        ) from exc
+
+    return [
+        AvailableModel(
+            model_id=str(item["id"]),
+            model_type=str(item.get("type", "unknown")),
+            quantization=item.get("quantization"),
+            state=item.get("state"),
+        )
+        for item in response.json().get("data", [])
+    ]
 
 
 class LMStudioProvider:

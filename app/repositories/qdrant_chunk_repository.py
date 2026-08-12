@@ -14,12 +14,14 @@ the same point and re-indexing safely overwrites rather than duplicates.
 """
 
 import uuid
+from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qm
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from app.domain.chunk import Chunk
+from app.domain.document_summary import DocumentSummary
 from app.domain.embedding import EmbeddingModelInfo
 from app.domain.indexing import IndexingError, IndexingErrorCode
 
@@ -159,6 +161,44 @@ class QdrantChunkRepository:
             ) from exc
 
         return {record.payload["chunk_id"] for record in records if record.payload}
+
+    def list_documents(self, collection_name: str) -> list[DocumentSummary]:
+        """Derives the document list from the chunks actually indexed —
+        there is no separate document registry to fall out of sync."""
+        try:
+            if not self._client.collection_exists(collection_name):
+                return []
+            records, _ = self._client.scroll(
+                collection_name=collection_name, with_payload=True, limit=10_000
+            )
+        except _QDRANT_CONNECTION_ERRORS as exc:
+            raise IndexingError(
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+            ) from exc
+
+        by_document: dict[str, list[dict[str, Any]]] = {}
+        for record in records:
+            payload = record.payload or {}
+            document_id = payload.get("document_id")
+            if document_id is None:
+                continue
+            by_document.setdefault(str(document_id), []).append(payload)
+
+        return [
+            DocumentSummary(
+                document_id=document_id,
+                filename=str(payloads[0]["filename"]),
+                chunk_count=len(payloads),
+                page_count=max(int(payload["page_end"]) for payload in payloads),
+            )
+            for document_id, payloads in by_document.items()
+        ]
+
+    def get_document(self, collection_name: str, document_id: str) -> DocumentSummary | None:
+        for summary in self.list_documents(collection_name):
+            if summary.document_id == document_id:
+                return summary
+        return None
 
     def delete_by_document_id(self, collection_name: str, document_id: str) -> None:
         try:

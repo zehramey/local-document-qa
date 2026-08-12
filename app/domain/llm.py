@@ -44,6 +44,14 @@ class GenerationResult:
     metrics: GenerationMetrics
 
 
+@dataclass(frozen=True)
+class AvailableModel:
+    model_id: str
+    model_type: str
+    quantization: str | None
+    state: str | None
+
+
 class LlmErrorCode(str, Enum):
     SERVER_UNAVAILABLE = "server_unavailable"
     TIMEOUT = "timeout"

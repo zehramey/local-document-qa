@@ -8,5 +8,38 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
 
+  api:
+    build: .
+    container_name: local-document-qa-api
+    depends_on:
+      - qdrant
+    ports:
+      - "8000:8000"
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      # LM Studio (or any other OpenAI-compatible local LLM server) is
+      # assumed to run on the host machine by default, not in a
+      # container. Point this at a containerized LLM service's URL
+      # instead if you add one to this compose file.
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:1234}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+
+  ui:
+    build: .
+    container_name: local-document-qa-ui
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000
+    command:
+      ["streamlit", "run", "ui/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
 volumes:
   qdrant_storage:
+  huggingface_cache:

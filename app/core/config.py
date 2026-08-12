@@ -13,8 +13,12 @@ class Settings(BaseSettings):
 
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
+    qdrant_timeout_seconds: float = 5.0
 
     max_upload_size_bytes: int = 20 * 1024 * 1024
+
+    chunking_max_tokens: int = 500
+    chunking_overlap_tokens: int = 75
 
     embedding_model_id: str = "BAAI/bge-m3"
     embedding_device: str = "cpu"
@@ -27,6 +31,10 @@ class Settings(BaseSettings):
 
     reranker_model_id: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
+    # Off by default: loading the reranker alongside the embedding model
+    # and the LLM was tight on this development machine's RAM (see Faz 6
+    # hardware notes, ~3.6GB free). Safe to enable where RAM allows.
+    enable_reranker: bool = False
 
     llm_base_url: str = "http://localhost:1234"
     llm_model_id: str = "qwen/qwen3.5-4b"
