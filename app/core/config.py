@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     reranker_model_id: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
 
+    llm_base_url: str = "http://localhost:1234"
+    llm_model_id: str = "qwen/qwen3.5-4b"
+    llm_temperature: float = 0.0
+    llm_top_p: float = 1.0
+    llm_max_new_tokens: int = 512
+    llm_context_token_limit: int = 3000
+    llm_timeout_seconds: float = 60.0
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -8,7 +8,6 @@ Run explicitly with: pytest -m integration
 """
 
 import pytest
-
 from app.domain.retrieval import RetrievedChunk
 from app.services.cross_encoder_reranker import CrossEncoderReranker
 from app.services.reranker_models import BGE_RERANKER_V2_M3
