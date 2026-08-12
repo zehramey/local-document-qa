@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
 
+    max_upload_size_bytes: int = 20 * 1024 * 1024
+
 
 @lru_cache
 def get_settings() -> Settings:
