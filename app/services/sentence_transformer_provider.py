@@ -36,7 +36,9 @@ class SentenceTransformerEmbeddingProvider:
         self._passage_instruction = passage_instruction
         self._normalize = normalize
         self._batch_size = batch_size
-        dimension = int(self._model.get_sentence_embedding_dimension())
+        dimension = self._model.get_sentence_embedding_dimension()
+        if dimension is None:
+            raise RuntimeError(f"Model '{model_id}' embedding boyutunu bildirmedi.")
         self._info = EmbeddingModelInfo(
             model_id=model_id,
             revision=revision or "main",

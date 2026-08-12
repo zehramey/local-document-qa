@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
     embedding_batch_size: int = 32
 
+    retrieval_top_k: int = 10
+    llm_context_top_k: int = 5
+    retrieval_score_threshold: float | None = None
+    retrieval_max_overlap_ratio: float = 0.8
+
+    reranker_model_id: str = "BAAI/bge-reranker-v2-m3"
+    reranker_device: str = "cpu"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -116,6 +116,31 @@ class QdrantChunkRepository:
                 IndexingErrorCode.UPSERT_FAILED, f"Chunk upsert başarısız: {exc}"
             ) from exc
 
+    def search_similar(
+        self, collection_name: str, query_vector: list[float], document_id: str, limit: int
+    ) -> list[qm.ScoredPoint]:
+        """Cosine-similarity search scoped to a single document_id.
+
+        The document_id filter is mandatory here (not optional) so a query
+        can never surface chunks from a document the user didn't select.
+        """
+        try:
+            return self._client.search(
+                collection_name=collection_name,
+                query_vector=query_vector,
+                query_filter=qm.Filter(
+                    must=[
+                        qm.FieldCondition(key="document_id", match=qm.MatchValue(value=document_id))
+                    ]
+                ),
+                limit=limit,
+                with_payload=True,
+            )
+        except _QDRANT_CONNECTION_ERRORS as exc:
+            raise IndexingError(
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+            ) from exc
+
     def find_chunk_ids_by_document(self, collection_name: str, document_id: str) -> set[str]:
         try:
             records, _ = self._client.scroll(
