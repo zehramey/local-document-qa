@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.5,<3",
     "pymupdf>=1.24,<1.25",
+    "qdrant-client>=1.11,<1.12",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,9 @@ dev = [
     "httpx>=0.27,<0.28",
     "ruff>=0.6,<0.7",
     "mypy>=1.11,<2",
+]
+embeddings = [
+    "sentence-transformers>=3.0,<4",
 ]
 
 [build-system]
@@ -44,4 +48,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra -m \"not integration\""
+markers = [
+    "integration: requires a real embedding model download and/or a live Qdrant server; excluded by default (run with -m integration).",
+]

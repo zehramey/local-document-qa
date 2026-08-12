@@ -16,6 +16,10 @@ class Settings(BaseSettings):
 
     max_upload_size_bytes: int = 20 * 1024 * 1024
 
+    embedding_model_id: str = "BAAI/bge-m3"
+    embedding_device: str = "cpu"
+    embedding_batch_size: int = 32
+
 
 @lru_cache
 def get_settings() -> Settings:
