@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_timeout_seconds: float = 5.0
+    # If set, connect to Qdrant in embedded/on-disk mode (no server
+    # process) instead of host:port — useful for local development
+    # without Docker. Ignored by docker-compose deployments, which don't
+    # set this and use the real qdrant service instead.
+    qdrant_storage_path: str | None = None
 
     max_upload_size_bytes: int = 20 * 1024 * 1024
 

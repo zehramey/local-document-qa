@@ -37,6 +37,8 @@ def get_app_settings() -> Settings:
 @lru_cache
 def get_qdrant_client() -> QdrantClient:
     settings = get_settings()
+    if settings.qdrant_storage_path:
+        return QdrantClient(path=settings.qdrant_storage_path)
     # Without an explicit timeout, an unreachable Qdrant can hang a request
     # indefinitely instead of surfacing IndexingErrorCode.QDRANT_UNAVAILABLE.
     return QdrantClient(
