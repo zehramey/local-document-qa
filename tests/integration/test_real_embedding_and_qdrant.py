@@ -1,12 +1,20 @@
-"""Verifies the real embedding model (BAAI/bge-m3) and a real Qdrant server.
+"""Verifies the real embedding model (BAAI/bge-m3) against a real Qdrant.
 
 Excluded from the default test run (see pyproject `addopts`) because it
 downloads a real model (first run only, then cached) and requires
-`pip install -e ".[embeddings]"` plus a reachable Qdrant instance
-(e.g. `docker compose up -d qdrant`).
+`pip install -e ".[embeddings]"`.
+
+Uses qdrant-client's embedded local mode (on-disk, no server process) so
+this also runs on machines where Docker/WSL is unavailable (e.g. locked-down
+corporate laptops). Point at a live Qdrant server instead by replacing
+`QdrantClient(path=...)` with `QdrantClient(host=..., port=...)` if desired.
 
 Run explicitly with: pytest -m integration
 """
+
+import shutil
+import tempfile
+from pathlib import Path
 
 import pytest
 from app.domain.chunk import Chunk
@@ -29,7 +37,17 @@ def test_real_bge_m3_embeddings_are_indexed_in_real_qdrant() -> None:
     )
     assert provider.model_info.vector_dimension > 0
 
-    repository = QdrantChunkRepository(QdrantClient(host="localhost", port=6333))
+    storage_dir = Path(tempfile.mkdtemp(prefix="qdrant_integration_"))
+    try:
+        repository = QdrantChunkRepository(QdrantClient(path=str(storage_dir)))
+        _run_index_and_query(provider, repository)
+    finally:
+        shutil.rmtree(storage_dir, ignore_errors=True)
+
+
+def _run_index_and_query(
+    provider: SentenceTransformerEmbeddingProvider, repository: QdrantChunkRepository
+) -> None:
     service = IndexingService(provider, repository)
 
     document = Document(
