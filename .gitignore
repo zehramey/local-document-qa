@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env
+.env
+
+# Models / weights (top-level only; app/models is the Pydantic schema package)
+/models/
+*.gguf
+*.bin
+*.safetensors
+
+# Data / documents
+sample_documents/*
+!sample_documents/.gitkeep
+data/
+
+# Qdrant storage
+qdrant_storage/
+qdrant_data/
+
+# Checkpoints / fine-tuning artifacts
+checkpoints/
+finetuning/output/
+finetuning/runs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
