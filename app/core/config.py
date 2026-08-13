@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     llm_context_token_limit: int = 3000
     llm_timeout_seconds: float = 60.0
 
+    # If set, model_ids starting with "gemini" route to the Gemini API
+    # instead of LM Studio (see app/api/dependencies.py:get_llm_provider).
+    gemini_api_key: str | None = None
+    # "gemini-2.5-flash" 404s against v1beta generateContent as of the last
+    # check (Aug 2026) — the model still exists in ListModels but that
+    # endpoint appears retired for it. "-latest" aliases stay valid as
+    # Google rotates the underlying model (currently gemini-3.6-flash).
+    gemini_model_id: str = "gemini-flash-latest"
+
 
 @lru_cache
 def get_settings() -> Settings:

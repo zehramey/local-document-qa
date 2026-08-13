@@ -28,7 +28,9 @@ def _get(path: str, **kwargs: object) -> httpx.Response:
 
 
 def _post(path: str, **kwargs: object) -> httpx.Response:
-    return httpx.post(f"{API_BASE_URL}{path}", timeout=120.0, **kwargs)  # type: ignore[arg-type]
+    # Must stay above LLM_TIMEOUT_SECONDS (.env) so a slow LLM gets to return
+    # its own {error_code, message} instead of the UI giving up first.
+    return httpx.post(f"{API_BASE_URL}{path}", timeout=220.0, **kwargs)  # type: ignore[arg-type]
 
 
 def _delete(path: str) -> httpx.Response:

@@ -15,7 +15,7 @@ from qdrant_client import QdrantClient
 
 from app.core.config import Settings, get_settings
 from app.domain.chunk import ChunkingConfig
-from app.domain.llm import GenerationConfig
+from app.domain.llm import GenerationConfig, LlmError, LlmErrorCode
 from app.domain.retrieval import RetrievalConfig
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
 from app.services.chunking import ChunkingService
@@ -116,6 +116,15 @@ def get_retrieval_config() -> RetrievalConfig:
 @lru_cache
 def _get_llm_provider_cached(model_id: str) -> LlmProvider:
     settings = get_settings()
+    if model_id.lower().startswith("gemini"):
+        if not settings.gemini_api_key:
+            raise LlmError(
+                LlmErrorCode.SERVER_UNAVAILABLE,
+                "GEMINI_API_KEY ayarlanmamış (.env dosyasına ekleyin).",
+            )
+        from app.services.gemini_provider import GeminiProvider
+
+        return GeminiProvider(model_id=model_id, api_key=settings.gemini_api_key)
     return LMStudioProvider(model_id=model_id, base_url=settings.llm_base_url)
 
 
