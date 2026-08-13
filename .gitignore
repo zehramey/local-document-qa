@@ -38,3 +38,6 @@ finetuning/runs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Downloaded eval datasets (large, re-fetchable, license terms vary)
+benchmark/data/

@@ -22,78 +22,95 @@ import httpx
 BENCHMARK_DIR = Path(__file__).parent
 
 
+def _documents_from_eval_set(eval_set: dict[str, object]) -> list[dict[str, object]]:
+    """Normalizes both eval-set shapes to a list of {document_id, questions}.
+
+    Legacy shape (eval_questions.json): a single top-level document_id +
+    questions. Multi-document shape (eval_questions_squad.json, see
+    prepare_squad_eval.py): a "documents" list, since SQuAD questions are
+    each scoped to their own paragraph/document rather than one shared doc.
+    """
+    if "documents" in eval_set:
+        return eval_set["documents"]  # type: ignore[return-value]
+    return [{"document_id": eval_set["document_id"], "questions": eval_set["questions"]}]
+
+
 def run(api_base_url: str, models: list[str], questions_path: Path) -> list[dict[str, object]]:
     eval_set = json.loads(questions_path.read_text(encoding="utf-8"))
-    document_id = eval_set["document_id"]
-    questions = eval_set["questions"]
+    documents = _documents_from_eval_set(eval_set)
 
     results: list[dict[str, object]] = []
-    total = len(models) * len(questions)
+    total = len(models) * sum(len(doc["questions"]) for doc in documents)
     done = 0
 
     for model_id in models:
-        for q in questions:
-            done += 1
-            print(f"[{done}/{total}] {model_id} :: {q['id']}", flush=True)
-            start = time.monotonic()
-            try:
-                response = httpx.post(
-                    f"{api_base_url}/questions",
-                    json={
+        for doc in documents:
+            document_id = doc["document_id"]
+            for q in doc["questions"]:
+                done += 1
+                print(f"[{done}/{total}] {model_id} :: {document_id[:12]} :: {q['id']}", flush=True)
+                start = time.monotonic()
+                try:
+                    response = httpx.post(
+                        f"{api_base_url}/questions",
+                        json={
+                            "document_id": document_id,
+                            "question": q["question"],
+                            "model_id": model_id,
+                        },
+                        timeout=240.0,
+                    )
+                    client_elapsed = time.monotonic() - start
+                except httpx.HTTPError as exc:
+                    results.append(
+                        {
+                            "model_id": model_id,
+                            "document_id": document_id,
+                            "question_id": q["id"],
+                            "question": q["question"],
+                            "expected_answerable": q["expected_answerable"],
+                            "error": f"connection error: {exc}",
+                        }
+                    )
+                    continue
+
+                if response.status_code != 200:
+                    results.append(
+                        {
+                            "model_id": model_id,
+                            "document_id": document_id,
+                            "question_id": q["id"],
+                            "question": q["question"],
+                            "expected_answerable": q["expected_answerable"],
+                            "error": f"HTTP {response.status_code}: {response.text[:300]}",
+                        }
+                    )
+                    continue
+
+                body = response.json()
+                metrics = body.get("metrics") or {}
+                results.append(
+                    {
+                        "model_id": model_id,
                         "document_id": document_id,
-                        "question": q["question"],
-                        "model_id": model_id,
-                    },
-                    timeout=240.0,
-                )
-                client_elapsed = time.monotonic() - start
-            except httpx.HTTPError as exc:
-                results.append(
-                    {
-                        "model_id": model_id,
                         "question_id": q["id"],
                         "question": q["question"],
                         "expected_answerable": q["expected_answerable"],
-                        "error": f"connection error: {exc}",
+                        "answerable": body["answerable"],
+                        "answer": body["answer"],
+                        "citation_count": len(body["citations"]),
+                        "rejected_citation_count": len(body["rejected_citation_ids"]),
+                        "prompt_tokens": metrics.get("prompt_tokens"),
+                        "output_tokens": metrics.get("output_tokens"),
+                        "total_duration_seconds": metrics.get("total_duration_seconds"),
+                        "tokens_per_second": metrics.get("tokens_per_second"),
+                        "client_elapsed_seconds": round(client_elapsed, 2),
+                        "error": None,
+                        # Filled in by hand after reading the answer.
+                        "human_correct": "",
+                        "human_notes": "",
                     }
                 )
-                continue
-
-            if response.status_code != 200:
-                results.append(
-                    {
-                        "model_id": model_id,
-                        "question_id": q["id"],
-                        "question": q["question"],
-                        "expected_answerable": q["expected_answerable"],
-                        "error": f"HTTP {response.status_code}: {response.text[:300]}",
-                    }
-                )
-                continue
-
-            body = response.json()
-            metrics = body.get("metrics") or {}
-            results.append(
-                {
-                    "model_id": model_id,
-                    "question_id": q["id"],
-                    "question": q["question"],
-                    "expected_answerable": q["expected_answerable"],
-                    "answerable": body["answerable"],
-                    "answer": body["answer"],
-                    "citation_count": len(body["citations"]),
-                    "rejected_citation_count": len(body["rejected_citation_ids"]),
-                    "prompt_tokens": metrics.get("prompt_tokens"),
-                    "output_tokens": metrics.get("output_tokens"),
-                    "total_duration_seconds": metrics.get("total_duration_seconds"),
-                    "tokens_per_second": metrics.get("tokens_per_second"),
-                    "client_elapsed_seconds": round(client_elapsed, 2),
-                    "error": None,
-                    # Filled in by hand after reading the answer.
-                    "human_correct": "",
-                    "human_notes": "",
-                }
-            )
     return results
 
 
@@ -106,7 +123,14 @@ def write_outputs(results: list[dict[str, object]]) -> tuple[Path, Path]:
     json_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
     csv_path = results_dir / f"results_{stamp}.csv"
-    fieldnames = list(results[0].keys()) if results else []
+    # Error rows have fewer keys than success rows (see run()); union of all
+    # keys, in first-seen order, so a leading error row can't cause later
+    # full rows to fail as "extra" fields.
+    fieldnames: list[str] = []
+    for row in results:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
