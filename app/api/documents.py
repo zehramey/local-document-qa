@@ -21,7 +21,7 @@ async def upload_document(
     ingestion_service: DocumentIngestionService = Depends(get_document_ingestion_service),
 ) -> DocumentUploadResponse:
     content = await file.read()
-    result = ingestion_service.ingest(file.filename or "dosya", content)
+    result = ingestion_service.ingest(file.filename or "file", content)
     return DocumentUploadResponse(
         document_id=result.document_id, filename=result.filename, chunk_count=result.chunk_count
     )
@@ -56,7 +56,7 @@ def get_document(
     collection_name = collection_name_for(embedding_provider.model_info)
     summary = repository.get_document(collection_name, document_id)
     if summary is None:
-        raise HTTPException(status_code=404, detail="Doküman bulunamadı.")
+        raise HTTPException(status_code=404, detail="Document not found.")
     return DocumentSummaryResponse(
         document_id=summary.document_id,
         filename=summary.filename,
@@ -74,5 +74,5 @@ def delete_document(
 ) -> None:
     collection_name = collection_name_for(embedding_provider.model_info)
     if repository.get_document(collection_name, document_id) is None:
-        raise HTTPException(status_code=404, detail="Doküman bulunamadı.")
+        raise HTTPException(status_code=404, detail="Document not found.")
     indexing_service.delete_document(document_id)

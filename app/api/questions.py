@@ -38,7 +38,7 @@ def ask_question(
 ) -> QuestionResponse:
     collection_name = collection_name_for(embedding_provider.model_info)
     if repository.get_document(collection_name, request.document_id) is None:
-        raise HTTPException(status_code=404, detail="Doküman bulunamadı.")
+        raise HTTPException(status_code=404, detail="Document not found.")
 
     # A non-default model_id bypasses the (test-overridable) default
     # rag_service dependency and builds a fresh one for that model —

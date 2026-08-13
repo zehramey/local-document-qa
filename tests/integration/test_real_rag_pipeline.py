@@ -37,37 +37,37 @@ from qdrant_client import QdrantClient
 
 pytestmark = pytest.mark.integration
 
-_SAMPLE_DOCUMENT = """Giriş
+_SAMPLE_DOCUMENT = """Introduction
 
-Local Document QA, kullanıcıların kendi PDF ve TXT dosyalarına soru \
-sorabildiği, tamamen yerel çalışan bir sistemdir.
+Local Document QA is a fully local system that lets users ask questions \
+about their own PDF and TXT files.
 
-Metin Çıkarma
+Text Extraction
 
-Sistem, PDF dosyalarından metni PyMuPDF kütüphanesi kullanarak sayfa \
-sayfa çıkarır. Her sayfanın numarası korunur.
+The system extracts text from PDF files page by page using the PyMuPDF \
+library. Each page's number is preserved.
 
-Parçalama
+Chunking
 
-Çıkarılan metin, başlık ve paragraf sınırları önceliklendirilerek token \
-tabanlı parçalara (chunk) bölünür.
+The extracted text is split into token-based chunks, prioritizing \
+heading and paragraph boundaries.
 
-Embedding ve Arama
+Embedding and Search
 
-Her chunk, BAAI/bge-m3 modeliyle vektöre çevrilir ve Qdrant içinde \
-saklanır. Kullanıcı sorusu geldiğinde, cosine similarity ile en alakalı \
-chunk'lar bulunur.
+Each chunk is converted into a vector with the BAAI/bge-m3 model and \
+stored in Qdrant. When a user question arrives, the most relevant \
+chunks are found via cosine similarity.
 
-Sınırlamalar
+Limitations
 
-Bu sistemde OCR desteği yoktur; taranmış (görüntü tabanlı) PDF'ler \
-işlenemez.
+This system does not support OCR; scanned (image-based) PDFs cannot be \
+processed.
 """
 
 _QUESTIONS = [
-    ("dogrudan", "Sistem PDF dosyalarından metni hangi kütüphaneyle çıkarır?"),
-    ("paraphrase", "Doküman içeriğini okumak için hangi teknoloji kullanılıyor?"),
-    ("dokumanda_yok", "Sistemin fiyatlandırma modeli nedir?"),
+    ("direct", "Which library does the system use to extract text from PDF files?"),
+    ("paraphrase", "What technology is used to read the document's content?"),
+    ("not_in_document", "What is the system's pricing model?"),
 ]
 
 
@@ -76,7 +76,7 @@ def test_three_real_questions_against_real_models() -> None:
         model_id=BGE_M3.model_id, device="cpu"
     )
     llm_provider = LMStudioProvider(model_id="qwen/qwen3.5-4b")
-    assert llm_provider.health_check(), "LM Studio sunucusu veya model yüklü değil"
+    assert llm_provider.health_check(), "LM Studio server or model is not loaded"
 
     storage_dir = Path(tempfile.mkdtemp(prefix="rag_pipeline_integration_"))
     try:
@@ -105,24 +105,24 @@ def test_three_real_questions_against_real_models() -> None:
             )
             rag_answer = rag_service.answer(question, retrieval_result, generation_config)
 
-            print(f"\n=== [{label}] Soru: {question} ===")
+            print(f"\n=== [{label}] Question: {question} ===")
             print(f"Answerable: {rag_answer.answerable}")
-            print(f"Cevap: {rag_answer.answer}")
-            print(f"Retrieved chunk'lar ({len(retrieval_result.chunks)}):")
+            print(f"Answer: {rag_answer.answer}")
+            print(f"Retrieved chunks ({len(retrieval_result.chunks)}):")
             for chunk in retrieval_result.chunks:
                 preview = chunk.text[:80].replace("\n", " ")
                 print(
-                    f"  - chunk_id={chunk.chunk_id[:12]}... sayfa={chunk.page_start}-"
+                    f"  - chunk_id={chunk.chunk_id[:12]}... page={chunk.page_start}-"
                     f"{chunk.page_end} score={chunk.retrieval_score:.3f} text='{preview}...'"
                 )
             print(f"Citations ({len(rag_answer.citations)}):")
             for citation in rag_answer.citations:
                 print(
                     f"  - chunk_id={citation.chunk_id[:12]}... "
-                    f"dosya={citation.filename} sayfa={citation.page_start}-{citation.page_end}"
+                    f"file={citation.filename} page={citation.page_start}-{citation.page_end}"
                 )
             if rag_answer.rejected_citation_ids:
-                print(f"Reddedilen citation'lar: {rag_answer.rejected_citation_ids}")
+                print(f"Rejected citations: {rag_answer.rejected_citation_ids}")
             metrics = rag_answer.metrics
             if metrics is not None:
                 print(
@@ -133,7 +133,7 @@ def test_three_real_questions_against_real_models() -> None:
                     f"tok/s={metrics.tokens_per_second}"
                 )
 
-            if label == "dokumanda_yok":
+            if label == "not_in_document":
                 assert rag_answer.answerable is False
             else:
                 assert rag_answer.answerable is True

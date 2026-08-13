@@ -14,7 +14,7 @@ from app.services.retrieval import RetrievalService
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
-_ANSWER_JSON = '{"answer": "test cevap", "answerable": true, "cited_chunk_ids": []}'
+_ANSWER_JSON = '{"answer": "test answer", "answerable": true, "cited_chunk_ids": []}'
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def _upload_sample_document(client: TestClient) -> str:
         files={
             "file": (
                 "notes.txt",
-                b"Bu bir test dokumanidir. Icerik hakkinda bilgi verir.",
+                b"This is a test document. It provides information about the content.",
                 "text/plain",
             )
         },
@@ -77,7 +77,7 @@ def test_api_health_check(client: TestClient) -> None:
 def test_document_upload_succeeds(client: TestClient) -> None:
     response = client.post(
         "/documents",
-        files={"file": ("notes.txt", b"Bu bir test dokumanidir.", "text/plain")},
+        files={"file": ("notes.txt", b"This is a test document.", "text/plain")},
     )
 
     assert response.status_code == 201
@@ -101,18 +101,18 @@ def test_question_endpoint_returns_answer(client: TestClient) -> None:
     document_id = _upload_sample_document(client)
 
     response = client.post(
-        "/questions", json={"document_id": document_id, "question": "Bu dokuman ne hakkinda?"}
+        "/questions", json={"document_id": document_id, "question": "What is this document about?"}
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == "test cevap"
+    assert body["answer"] == "test answer"
     assert body["answerable"] is True
 
 
 def test_question_for_unknown_document_returns_404(client: TestClient) -> None:
     response = client.post(
-        "/questions", json={"document_id": "f" * 64, "question": "soru"}
+        "/questions", json={"document_id": "f" * 64, "question": "question"}
     )
 
     assert response.status_code == 404
@@ -138,13 +138,13 @@ def test_model_unavailable_returns_service_unavailable(client: TestClient) -> No
     document_id = _upload_sample_document(client)
     broken_rag_service = RagAnswerService(
         FakeLlmProvider(
-            raises=LlmError(LlmErrorCode.SERVER_UNAVAILABLE, "LLM sunucusuna erişilemedi")
+            raises=LlmError(LlmErrorCode.SERVER_UNAVAILABLE, "could not reach the LLM server")
         )
     )
     app.dependency_overrides[deps.get_default_rag_answer_service] = lambda: broken_rag_service
 
     response = client.post(
-        "/questions", json={"document_id": document_id, "question": "soru"}
+        "/questions", json={"document_id": document_id, "question": "question"}
     )
 
     assert response.status_code == 503

@@ -26,27 +26,27 @@ class FileValidator:
         if extension not in self._config.allowed_extensions:
             raise DocumentProcessingError(
                 DocumentErrorCode.UNSUPPORTED_FILE_TYPE,
-                f"Desteklenmeyen dosya uzantısı: '{extension or filename}'. "
-                f"Desteklenen uzantılar: {sorted(self._config.allowed_extensions)}",
+                f"Unsupported file extension: '{extension or filename}'. "
+                f"Supported extensions: {sorted(self._config.allowed_extensions)}",
             )
 
         if len(content) == 0:
             raise DocumentProcessingError(
-                DocumentErrorCode.EMPTY_FILE, f"Dosya boş: '{filename}'"
+                DocumentErrorCode.EMPTY_FILE, f"File is empty: '{filename}'"
             )
 
         if len(content) > self._config.max_size_bytes:
             raise DocumentProcessingError(
                 DocumentErrorCode.FILE_TOO_LARGE,
-                f"Dosya boyutu sınırı aşıyor: {len(content)} bayt > izin verilen "
-                f"{self._config.max_size_bytes} bayt",
+                f"File size exceeds the limit: {len(content)} bytes > allowed "
+                f"{self._config.max_size_bytes} bytes",
             )
 
         document_type = DocumentType.PDF if extension == ".pdf" else DocumentType.TXT
         if document_type == DocumentType.PDF and not content.startswith(_PDF_SIGNATURE):
             raise DocumentProcessingError(
                 DocumentErrorCode.CORRUPTED_FILE,
-                f"'{filename}' geçerli bir PDF imzasına sahip değil.",
+                f"'{filename}' does not have a valid PDF signature.",
             )
 
         return document_type

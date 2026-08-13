@@ -1,36 +1,36 @@
-# Tokenizer Yaklaşımı
+# Tokenizer Approach
 
-Chunking servisi, `app/services/tokenization.py` içindeki `Tokenizer` protokolü
-arkasında çalışır. Bu, chunking mantığının hangi tokenizer'ın kullanıldığından
-bağımsız olmasını sağlar.
+The chunking service operates behind the `Tokenizer` protocol defined in
+`app/services/tokenization.py`. This keeps the chunking logic independent
+of which tokenizer is actually used.
 
-## Şu an kullanılan: `ApproximateTokenizer`
+## Currently in use: `ApproximateTokenizer`
 
-- **Yöntem:** Unicode kelime/noktalama ayrıştırması (`\w+|[^\w\s]` regex'i).
-  Her kelime ve her noktalama işareti bir "token" sayılır.
-- **Neden bu yaklaşım seçildi:** Faz 3'te henüz bir embedding modeli
-  seçilmedi (donanım/uyumluluk kontrolü tamamlanmadı). Gerçek bir model
-  tokenizer'ı (ör. BGE-M3, multilingual-E5 için HuggingFace tokenizer'ı veya
-  tiktoken/BPE) hem ek bağımlılık hem de bazı durumlarda internetten indirme
-  gerektirir; bu da "mümkün olduğunca yerel" hedefiyle çelişir. Dependency-free,
-  tamamen deterministik ve offline çalışan bir yaklaşım tercih edildi.
-- **Sınırlamalar:** Bu, hiçbir gerçek embedding/LLM modelinin subword
-  vocabulary'sini birebir yansıtmaz. Token sayıları yönsel olarak doğrudur
-  (daha uzun metin → daha çok token) ama herhangi bir gerçek modelin tokenizer
-  çıktısıyla birebir eşleşmeyecektir. Bu bir tasarım tercihidir, ölçülmüş bir
-  performans iddiası değildir (bkz. proje kuralı 16).
+- **Method:** Unicode word/punctuation splitting (the `\w+|[^\w\s]` regex).
+  Each word and each punctuation mark counts as one "token".
+- **Why this approach was chosen:** At Phase 3, no embedding model had
+  been selected yet (hardware/compatibility checks weren't done). A real
+  model tokenizer (e.g. the HuggingFace tokenizer for BGE-M3,
+  multilingual-E5, or tiktoken/BPE) requires both an extra dependency and,
+  in some cases, downloading from the internet — which conflicts with the
+  "as local as possible" goal. A dependency-free, fully deterministic,
+  offline-capable approach was preferred instead.
+- **Limitations:** This does not reproduce any real embedding/LLM model's
+  subword vocabulary exactly. Token counts are directionally correct
+  (more text → more tokens) but will not exactly match any real model's
+  tokenizer output. This is a design choice, not a measured performance
+  claim (see project rule 16).
 
-## Değiştirilebilirlik
+## Swappability
 
-`ChunkingService`, `Tokenizer` protokolüne (`count_tokens`, `token_boundaries`)
-uyan herhangi bir nesneyi kabul eder. Faz 4'te embedding modeli seçildiğinde,
-o modelin gerçek tokenizer'ını sarmalayan bir `Tokenizer` implementasyonu
-(ör. HuggingFace `AutoTokenizer` tabanlı) enjekte edilerek chunking mantığında
-hiçbir değişiklik yapılmadan geçiş yapılabilir.
+`ChunkingService` accepts any object conforming to the `Tokenizer`
+protocol (`count_tokens`, `token_boundaries`). Once an embedding model is
+selected in Phase 4, a `Tokenizer` implementation wrapping that model's
+real tokenizer (e.g. one based on HuggingFace `AutoTokenizer`) can be
+injected without any change to the chunking logic itself.
 
-## Chunking konfigürasyonları
+## Chunking configurations
 
-`app/services/chunking_presets.py` içinde isimle seçilebilir üç deney
-konfigürasyonu tanımlıdır: `300_50`, `500_75`, `800_100` (max_tokens/overlap_tokens).
-Bu isimler benchmark script'lerinden dışarıdan seçilebilir olacak şekilde
-tasarlanmıştır.
+`app/services/chunking_presets.py` defines three named experimental
+configurations: `300_50`, `500_75`, `800_100` (max_tokens/overlap_tokens).
+These names are designed to be selectable from benchmark scripts.

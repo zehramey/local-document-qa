@@ -75,10 +75,10 @@ class GeminiProvider:
             )
             response.raise_for_status()
         except httpx.TimeoutException as exc:
-            raise LlmError(LlmErrorCode.TIMEOUT, f"LLM isteği zaman aşımına uğradı: {exc}") from exc
+            raise LlmError(LlmErrorCode.TIMEOUT, f"LLM request timed out: {exc}") from exc
         except httpx.HTTPError as exc:
             raise LlmError(
-                LlmErrorCode.SERVER_UNAVAILABLE, f"LLM sunucusuna erişilemedi: {exc}"
+                LlmErrorCode.SERVER_UNAVAILABLE, f"Could not reach the LLM server: {exc}"
             ) from exc
         total_duration = time.monotonic() - start
 
@@ -88,7 +88,7 @@ class GeminiProvider:
             text = "".join(part.get("text", "") for part in candidate["content"]["parts"])
         except (KeyError, IndexError) as exc:
             raise LlmError(
-                LlmErrorCode.MALFORMED_RESPONSE, f"Gemini yanıtı beklenmeyen formatta: {body}"
+                LlmErrorCode.MALFORMED_RESPONSE, f"Gemini response is in an unexpected format: {body}"
             ) from exc
 
         usage = body.get("usageMetadata", {})

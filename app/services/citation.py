@@ -23,14 +23,14 @@ class CitationValidator:
         if chunk is None:
             raise CitationError(
                 CitationErrorCode.UNKNOWN_CHUNK_ID,
-                f"'{claimed_chunk_id}' bu sorgu için retrieve edilen chunk'lar arasında "
-                "değil; kaynak olarak kabul edilmedi.",
+                f"'{claimed_chunk_id}' is not among the chunks retrieved for this query; "
+                "not accepted as a source.",
             )
         if chunk.document_id != self._expected_document_id:
             raise CitationError(
                 CitationErrorCode.WRONG_DOCUMENT,
-                f"'{claimed_chunk_id}' beklenen dokümana (document_id="
-                f"'{self._expected_document_id}') ait değil.",
+                f"'{claimed_chunk_id}' does not belong to the expected document (document_id="
+                f"'{self._expected_document_id}').",
             )
         return Citation(
             chunk_id=chunk.chunk_id,

@@ -104,14 +104,14 @@ class RagAnswerService:
         except json.JSONDecodeError as exc:
             raise RagAnswerError(
                 RagAnswerErrorCode.MALFORMED_JSON,
-                f"LLM çıktısı geçerli JSON değil: {exc}",
+                f"LLM output is not valid JSON: {exc}",
                 raw_text=raw_text,
             ) from exc
 
         if not isinstance(parsed, dict):
             raise RagAnswerError(
                 RagAnswerErrorCode.MALFORMED_JSON,
-                "LLM çıktısı bir JSON nesnesi (object) değil.",
+                "LLM output is not a JSON object.",
                 raw_text=raw_text,
             )
 
@@ -119,7 +119,7 @@ class RagAnswerService:
             if field not in parsed:
                 raise RagAnswerError(
                     RagAnswerErrorCode.MISSING_REQUIRED_FIELD,
-                    f"LLM çıktısında '{field}' alanı eksik.",
+                    f"LLM output is missing the '{field}' field.",
                     raw_text=raw_text,
                 )
         return parsed

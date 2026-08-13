@@ -15,7 +15,7 @@ class TxtTextExtractor:
         except UnicodeDecodeError as exc:
             raise DocumentProcessingError(
                 DocumentErrorCode.TEXT_DECODING_ERROR,
-                f"TXT dosyası UTF-8 olarak decode edilemedi: {exc}",
+                f"TXT file could not be decoded as UTF-8: {exc}",
             ) from exc
 
         return [ExtractedPage(page_number=1, text=text)]

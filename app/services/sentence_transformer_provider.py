@@ -27,8 +27,8 @@ class SentenceTransformerEmbeddingProvider:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise RuntimeError(
-                "sentence-transformers kurulu değil. Gerçek embedding modeli için "
-                '`pip install -e ".[embeddings]"` çalıştırın.'
+                "sentence-transformers is not installed. For the real embedding model, run "
+                '`pip install -e ".[embeddings]"`.'
             ) from exc
 
         self._model = SentenceTransformer(model_id, revision=revision, device=device)

@@ -46,7 +46,7 @@ class QdrantChunkRepository:
             exists = self._client.collection_exists(collection_name)
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
 
         if not exists:
@@ -66,23 +66,23 @@ class QdrantChunkRepository:
         if not isinstance(vectors_config, qm.VectorParams):
             raise IndexingError(
                 IndexingErrorCode.VECTOR_DIMENSION_MISMATCH,
-                f"Collection '{collection_name}' bilinmeyen/named-vector bir yapılandırmaya "
-                "sahip; bu repository yalnızca tek, isimsiz vektör alanını destekler.",
+                f"Collection '{collection_name}' has an unknown/named-vector configuration; "
+                "this repository only supports a single, unnamed vector field.",
             )
         existing_dimension = vectors_config.size
         if existing_dimension != vector_dimension:
             raise IndexingError(
                 IndexingErrorCode.VECTOR_DIMENSION_MISMATCH,
-                f"Collection '{collection_name}' {existing_dimension} boyutlu vektörler "
-                f"içeriyor, ancak {vector_dimension} boyutlu vektör verildi. Farklı "
-                "embedding modelleri/boyutları aynı collection'da karıştırılamaz.",
+                f"Collection '{collection_name}' contains {existing_dimension}-dimensional "
+                f"vectors, but a {vector_dimension}-dimensional vector was given. Different "
+                "embedding models/dimensions cannot be mixed in the same collection.",
             )
 
     def upsert_chunks(
         self, collection_name: str, chunks: list[Chunk], vectors: list[list[float]]
     ) -> None:
         if len(chunks) != len(vectors):
-            raise ValueError("chunks ve vectors sayısı eşleşmiyor")
+            raise ValueError("chunks and vectors counts do not match")
         if not chunks:
             return
 
@@ -111,11 +111,11 @@ class QdrantChunkRepository:
             self._client.upsert(collection_name=collection_name, points=points)
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
         except Exception as exc:
             raise IndexingError(
-                IndexingErrorCode.UPSERT_FAILED, f"Chunk upsert başarısız: {exc}"
+                IndexingErrorCode.UPSERT_FAILED, f"Chunk upsert failed: {exc}"
             ) from exc
 
     def search_similar(
@@ -140,7 +140,7 @@ class QdrantChunkRepository:
             )
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
 
     def find_chunk_ids_by_document(self, collection_name: str, document_id: str) -> set[str]:
@@ -157,7 +157,7 @@ class QdrantChunkRepository:
             )
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
 
         return {record.payload["chunk_id"] for record in records if record.payload}
@@ -173,7 +173,7 @@ class QdrantChunkRepository:
             )
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
 
         by_document: dict[str, list[dict[str, Any]]] = {}
@@ -216,10 +216,10 @@ class QdrantChunkRepository:
             )
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
         except Exception as exc:
-            raise IndexingError(IndexingErrorCode.DELETE_FAILED, f"Silme başarısız: {exc}") from exc
+            raise IndexingError(IndexingErrorCode.DELETE_FAILED, f"Delete failed: {exc}") from exc
 
     def delete_chunk_ids(self, collection_name: str, chunk_ids: set[str]) -> None:
         if not chunk_ids:
@@ -232,15 +232,15 @@ class QdrantChunkRepository:
             )
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
         except Exception as exc:
-            raise IndexingError(IndexingErrorCode.DELETE_FAILED, f"Silme başarısız: {exc}") from exc
+            raise IndexingError(IndexingErrorCode.DELETE_FAILED, f"Delete failed: {exc}") from exc
 
     def count(self, collection_name: str) -> int:
         try:
             return self._client.count(collection_name).count
         except _QDRANT_CONNECTION_ERRORS as exc:
             raise IndexingError(
-                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Qdrant'a erişilemedi: {exc}"
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc

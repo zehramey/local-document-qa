@@ -31,7 +31,7 @@ def ensure_non_empty_texts(texts: list[str]) -> None:
     for text in texts:
         if not text or not text.strip():
             raise EmbeddingError(
-                EmbeddingErrorCode.EMPTY_TEXT, "Boş metin embedding modeline gönderilemez."
+                EmbeddingErrorCode.EMPTY_TEXT, "Empty text cannot be sent to the embedding model."
             )
 
 

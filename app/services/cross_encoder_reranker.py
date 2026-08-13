@@ -30,15 +30,15 @@ class CrossEncoderReranker:
             from sentence_transformers import CrossEncoder
         except ImportError as exc:
             raise RuntimeError(
-                "sentence-transformers kurulu değil. Gerçek reranker modeli için "
-                '`pip install -e ".[embeddings]"` çalıştırın.'
+                "sentence-transformers is not installed. For the real reranker model, run "
+                '`pip install -e ".[embeddings]"`.'
             ) from exc
 
         try:
             self._model = CrossEncoder(model_id, revision=revision, device=device)
         except Exception as exc:
             raise RerankerError(
-                RerankerErrorCode.MODEL_LOAD_FAILED, f"Reranker modeli yüklenemedi: {exc}"
+                RerankerErrorCode.MODEL_LOAD_FAILED, f"Reranker model could not be loaded: {exc}"
             ) from exc
 
         self._info = RerankerModelInfo(model_id=model_id, revision=revision or "main")
@@ -51,12 +51,12 @@ class CrossEncoderReranker:
         except ImportError as exc:
             raise RerankerError(
                 RerankerErrorCode.DEVICE_UNAVAILABLE,
-                "torch kurulu değil; CUDA cihazı kullanılamaz.",
+                "torch is not installed; a CUDA device cannot be used.",
             ) from exc
         if not torch.cuda.is_available():
             raise RerankerError(
                 RerankerErrorCode.DEVICE_UNAVAILABLE,
-                f"'{device}' istendi ama bu makinede CUDA kullanılamıyor.",
+                f"'{device}' was requested but CUDA is not available on this machine.",
             )
 
     @property

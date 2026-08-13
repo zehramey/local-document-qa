@@ -120,7 +120,7 @@ def _get_llm_provider_cached(model_id: str) -> LlmProvider:
         if not settings.gemini_api_key:
             raise LlmError(
                 LlmErrorCode.SERVER_UNAVAILABLE,
-                "GEMINI_API_KEY ayarlanmamış (.env dosyasına ekleyin).",
+                "GEMINI_API_KEY is not set (add it to your .env file).",
             )
         from app.services.gemini_provider import GeminiProvider
 

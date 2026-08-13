@@ -80,4 +80,4 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _unexpected_error(_: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unexpected error handling request")
-        return _error_response(500, "internal_error", "İç sunucu hatası oluştu.")
+        return _error_response(500, "internal_error", "An internal server error occurred.")

@@ -17,14 +17,14 @@ class PdfTextExtractor:
             document = fitz.open(stream=content, filetype="pdf")
         except Exception as exc:
             raise DocumentProcessingError(
-                DocumentErrorCode.CORRUPTED_FILE, f"PDF açılamadı veya bozuk: {exc}"
+                DocumentErrorCode.CORRUPTED_FILE, f"PDF could not be opened or is corrupted: {exc}"
             ) from exc
 
         try:
             if document.is_encrypted or document.needs_pass:
                 raise DocumentProcessingError(
                     DocumentErrorCode.ENCRYPTED_PDF,
-                    "PDF şifreli/parola korumalı; bu doküman işlenemez.",
+                    "PDF is encrypted/password-protected; this document cannot be processed.",
                 )
 
             pages = [
@@ -40,8 +40,8 @@ class PdfTextExtractor:
         if not any(page.text.strip() for page in pages):
             raise DocumentProcessingError(
                 DocumentErrorCode.SCANNED_PDF_NO_TEXT,
-                "PDF hiç metin içermiyor; taranmış (görüntü tabanlı) bir doküman "
-                "olabilir. Bu fazda OCR desteklenmiyor.",
+                "PDF contains no extractable text; it may be a scanned "
+                "(image-based) document. OCR is not supported.",
             )
 
         return pages

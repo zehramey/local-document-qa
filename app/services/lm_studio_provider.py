@@ -36,7 +36,7 @@ def list_available_models(
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise LlmError(
-            LlmErrorCode.SERVER_UNAVAILABLE, f"LM Studio model listesi alınamadı: {exc}"
+            LlmErrorCode.SERVER_UNAVAILABLE, f"Could not fetch the LM Studio model list: {exc}"
         ) from exc
 
     return [
@@ -122,10 +122,10 @@ class LMStudioProvider:
                     if chunk.get("usage"):
                         usage = chunk["usage"]
         except httpx.TimeoutException as exc:
-            raise LlmError(LlmErrorCode.TIMEOUT, f"LLM isteği zaman aşımına uğradı: {exc}") from exc
+            raise LlmError(LlmErrorCode.TIMEOUT, f"LLM request timed out: {exc}") from exc
         except httpx.HTTPError as exc:
             raise LlmError(
-                LlmErrorCode.SERVER_UNAVAILABLE, f"LLM sunucusuna erişilemedi: {exc}"
+                LlmErrorCode.SERVER_UNAVAILABLE, f"Could not reach the LLM server: {exc}"
             ) from exc
 
         total_duration = time.monotonic() - start
