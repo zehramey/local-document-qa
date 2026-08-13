@@ -8,6 +8,7 @@ traceback.
 
 import os
 import time
+from typing import Any
 
 import httpx
 import streamlit as st
@@ -122,7 +123,60 @@ else:
         st.warning(f"Model listesi alınamadı: {_api_error_message(models_response)}")
         model_ids = []
 
-selected_model_id = st.selectbox("LLM", model_ids) if model_ids else None
+selected_model_ids = (
+    st.multiselect(
+        "LLM (karşılaştırmak için birden fazla model seçebilirsiniz)",
+        model_ids,
+        default=model_ids[:1],
+    )
+    if model_ids
+    else []
+)
+
+
+def _render_answer_result(result: dict[str, Any]) -> None:
+    if result["answerable"]:
+        st.success(result["answer"])
+    else:
+        st.warning(result["answer"])
+    st.caption(f"Answerable: {result['answerable']}")
+
+    if result["rejected_citation_ids"]:
+        st.warning(
+            "Model bazı kaynakları uydurdu ve bu kaynaklar reddedildi: "
+            f"{', '.join(result['rejected_citation_ids'])}"
+        )
+
+    if result["citations"]:
+        st.subheader("Kaynaklar")
+        for citation in result["citations"]:
+            st.markdown(
+                f"- **{citation['filename']}**, sayfa "
+                f"{citation['page_start']}-{citation['page_end']} "
+                f"(chunk_id: `{citation['chunk_id'][:12]}...`)"
+            )
+
+    with st.expander("Kullanılan context'i göster/gizle"):
+        for chunk in result["retrieved_chunks"]:
+            reranker_score = chunk["reranker_score"]
+            reranker_text = f"{reranker_score:.3f}" if reranker_score is not None else "—"
+            st.markdown(
+                f"**#{chunk['final_rank']}** — sayfa {chunk['page_start']}-"
+                f"{chunk['page_end']} — retrieval_score: {chunk['retrieval_score']:.3f} — "
+                f"reranker_score: {reranker_text}"
+            )
+            st.text(chunk["text"])
+            st.divider()
+
+    metrics = result["metrics"]
+    if metrics is not None:
+        st.caption(
+            f"Model: {metrics['model_id']} (quantization: {metrics['quantization']}) — "
+            f"cevap süresi: {metrics['total_duration_seconds']:.2f}s — "
+            f"prompt_tokens={metrics['prompt_tokens']} "
+            f"output_tokens={metrics['output_tokens']}"
+        )
+
 
 # -- 6/7/8/9/10/11/12/13/14/15/16. Question + answer ----------------------
 
@@ -130,67 +184,82 @@ st.header("4. Soru Sor")
 question = st.text_input("Sorunuz")
 
 if st.button("Sor") and question:
-    with st.spinner("Cevap üretiliyor..."):
-        start = time.monotonic()
-        try:
-            response = _post(
-                "/questions",
-                json={
-                    "document_id": active_document_id,
-                    "question": question,
-                    "model_id": selected_model_id,
-                },
-            )
-        except httpx.HTTPError as exc:
-            st.error(f"Soru gönderilemedi: bağlantı hatası ({exc})")
-            response = None
-        client_elapsed = time.monotonic() - start
+    if not selected_model_ids:
+        st.error("En az bir model seçin.")
+    else:
+        results: dict[str, dict[str, Any]] = {}
+        errors: dict[str, str] = {}
+        client_elapsed: dict[str, float] = {}
 
-    if response is not None:
-        if response.status_code != 200:
-            st.error(f"Hata: {_api_error_message(response)}")
-        else:
-            result = response.json()
+        for model_id in selected_model_ids:
+            with st.spinner(f"'{model_id}' cevap üretiyor..."):
+                start = time.monotonic()
+                try:
+                    response = _post(
+                        "/questions",
+                        json={
+                            "document_id": active_document_id,
+                            "question": question,
+                            "model_id": model_id,
+                        },
+                    )
+                except httpx.HTTPError as exc:
+                    errors[model_id] = f"bağlantı hatası ({exc})"
+                    continue
+                client_elapsed[model_id] = time.monotonic() - start
 
-            if result["answerable"]:
-                st.success(result["answer"])
+            if response.status_code != 200:
+                errors[model_id] = _api_error_message(response)
             else:
-                st.warning(result["answer"])
-            st.caption(f"Answerable: {result['answerable']}")
+                results[model_id] = response.json()
 
-            if result["rejected_citation_ids"]:
-                st.warning(
-                    "Model bazı kaynakları uydurdu ve bu kaynaklar reddedildi: "
-                    f"{', '.join(result['rejected_citation_ids'])}"
-                )
+        # Comparison table only makes sense with 2+ models; with one, it'd
+        # just repeat the single answer already rendered below in its tab.
+        if len(selected_model_ids) > 1:
+            st.subheader("Karşılaştırma")
+            st.dataframe(
+                [
+                    {
+                        "Model": model_id,
+                        "Durum": "Hata" if model_id in errors else "OK",
+                        "Cevaplanabilir": (
+                            results[model_id]["answerable"] if model_id in results else "—"
+                        ),
+                        "Kaynak sayısı": (
+                            len(results[model_id]["citations"]) if model_id in results else "—"
+                        ),
+                        "Reddedilen kaynak": (
+                            len(results[model_id]["rejected_citation_ids"])
+                            if model_id in results
+                            else "—"
+                        ),
+                        "Sunucu süresi (s)": (
+                            round(results[model_id]["metrics"]["total_duration_seconds"], 2)
+                            if model_id in results and results[model_id]["metrics"]
+                            else "—"
+                        ),
+                        "token/s": (
+                            round(results[model_id]["metrics"]["tokens_per_second"], 2)
+                            if model_id in results
+                            and results[model_id]["metrics"]
+                            and results[model_id]["metrics"]["tokens_per_second"]
+                            else "—"
+                        ),
+                        "İstemci süresi (s)": round(client_elapsed.get(model_id, 0.0), 2),
+                    }
+                    for model_id in selected_model_ids
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
 
-            if result["citations"]:
-                st.subheader("Kaynaklar")
-                for citation in result["citations"]:
-                    st.markdown(
-                        f"- **{citation['filename']}**, sayfa "
-                        f"{citation['page_start']}-{citation['page_end']} "
-                        f"(chunk_id: `{citation['chunk_id'][:12]}...`)"
-                    )
-
-            with st.expander("Kullanılan context'i göster/gizle"):
-                for chunk in result["retrieved_chunks"]:
-                    reranker_score = chunk["reranker_score"]
-                    reranker_text = f"{reranker_score:.3f}" if reranker_score is not None else "—"
-                    st.markdown(
-                        f"**#{chunk['final_rank']}** — sayfa {chunk['page_start']}-"
-                        f"{chunk['page_end']} — retrieval_score: {chunk['retrieval_score']:.3f} — "
-                        f"reranker_score: {reranker_text}"
-                    )
-                    st.text(chunk["text"])
-                    st.divider()
-
-            metrics = result["metrics"]
-            if metrics is not None:
+        tabs = st.tabs(selected_model_ids)
+        for tab, model_id in zip(tabs, selected_model_ids, strict=True):
+            with tab:
+                if model_id in errors:
+                    st.error(f"Hata: {errors[model_id]}")
+                else:
+                    _render_answer_result(results[model_id])
                 st.caption(
-                    f"Model: {metrics['model_id']} (quantization: {metrics['quantization']}) — "
-                    f"cevap süresi: {metrics['total_duration_seconds']:.2f}s — "
-                    f"prompt_tokens={metrics['prompt_tokens']} "
-                    f"output_tokens={metrics['output_tokens']}"
+                    f"İstemci tarafında ölçülen süre: {client_elapsed.get(model_id, 0.0):.2f}s"
                 )
-            st.caption(f"İstemci tarafında ölçülen toplam süre: {client_elapsed:.2f}s")
