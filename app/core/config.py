@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
     embedding_batch_size: int = 32
 
+    # Off by default: requires a separate optional dependency (FlagEmbedding,
+    # `pip install -e ".[hybrid]"`) not installed by default, and — because
+    # sentence-transformers can't produce bge-m3's sparse output — loads
+    # bge-m3 into memory a second time via a different library, on top of
+    # the dense SentenceTransformerEmbeddingProvider. Indexed documents go
+    # into a differently-named collection (see collection_name_for(...,
+    # hybrid=True)), so turning this on/off never mixes schemas or requires
+    # migrating existing dense-only data; it does mean re-uploading
+    # documents to search them in hybrid mode.
+    enable_hybrid_search: bool = False
+    sparse_embedding_model_id: str = "BAAI/bge-m3"
+    sparse_embedding_device: str = "cpu"
+
     retrieval_top_k: int = 10
     llm_context_top_k: int = 5
     # Deliberately left unset (None = no filtering). A plausible-sounding

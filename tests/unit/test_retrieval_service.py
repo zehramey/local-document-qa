@@ -1,8 +1,8 @@
 from app.domain.chunk import Chunk
 from app.domain.document import Document, DocumentType
-from app.domain.embedding import EmbeddingModelInfo
+from app.domain.embedding import EmbeddingModelInfo, SparseVector
 from app.domain.retrieval import RetrievalConfig
-from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
+from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
 from app.services.indexing import IndexingService
 from app.services.reranker import FakeReranker
 from app.services.retrieval import RetrievalService
@@ -27,6 +27,20 @@ class _StubEmbeddingProvider:
         return [self._vectors[text] for text in texts]
 
     def embed_query(self, text: str) -> list[float]:
+        return self._vectors[text]
+
+
+class _StubSparseEmbeddingProvider:
+    """Test-only sparse provider with fully controlled, hand-picked
+    sparse vectors — same purpose as _StubEmbeddingProvider above."""
+
+    def __init__(self, vectors: dict[str, SparseVector]) -> None:
+        self._vectors = vectors
+
+    def embed_documents_sparse(self, texts: list[str]) -> list[SparseVector]:
+        return [self._vectors[text] for text in texts]
+
+    def embed_query_sparse(self, text: str) -> SparseVector:
         return self._vectors[text]
 
 
@@ -221,3 +235,118 @@ def test_context_for_llm_truncates_to_llm_top_k() -> None:
 
     assert len(result.chunks) == 6
     assert len(context) == 3
+
+
+# -- hybrid (dense + sparse) ---------------------------------------------
+
+
+def test_hybrid_retrieval_only_returns_chunks_from_the_selected_document() -> None:
+    dense_vectors = {
+        "doc1 chunk about apples": [1.0, 0.0, 0.0, 0.0],
+        "doc2 chunk about apples too": [1.0, 0.0, 0.0, 0.0],
+        "apples query": [1.0, 0.0, 0.0, 0.0],
+    }
+    sparse_vectors = {text: SparseVector(indices=[1], values=[1.0]) for text in dense_vectors}
+    provider = _StubEmbeddingProvider(dense_vectors, dimension=4)
+    sparse_provider = _StubSparseEmbeddingProvider(sparse_vectors)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    indexing = IndexingService(provider, repository, sparse_provider=sparse_provider)
+    indexing.index_document(
+        _make_document("doc-1"),
+        [_make_chunk("a" * 64, "doc-1", 0, "doc1 chunk about apples")],
+    )
+    indexing.index_document(
+        _make_document("doc-2"),
+        [_make_chunk("b" * 64, "doc-2", 0, "doc2 chunk about apples too")],
+    )
+
+    service = RetrievalService(provider, repository, sparse_provider=sparse_provider)
+    result = service.retrieve("apples query", document_id="doc-1", config=RetrievalConfig())
+
+    assert result.has_results
+    assert {chunk.document_id for chunk in result.chunks} == {"doc-1"}
+
+
+def test_hybrid_retrieval_uses_the_hybrid_collection_name() -> None:
+    dense_vectors = {"chunk text": [1.0, 0.0, 0.0, 0.0], "query": [1.0, 0.0, 0.0, 0.0]}
+    sparse_vectors = {
+        "chunk text": SparseVector(indices=[1], values=[1.0]),
+        "query": SparseVector(indices=[1], values=[1.0]),
+    }
+    provider = _StubEmbeddingProvider(dense_vectors, dimension=4)
+    sparse_provider = _StubSparseEmbeddingProvider(sparse_vectors)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    indexing_result = IndexingService(
+        provider, repository, sparse_provider=sparse_provider
+    ).index_document(_make_document("doc-1"), [_make_chunk("a" * 64, "doc-1", 0, "chunk text")])
+
+    hybrid_service = RetrievalService(provider, repository, sparse_provider=sparse_provider)
+    result = hybrid_service.retrieve("query", "doc-1", RetrievalConfig())
+
+    assert result.has_results
+    assert indexing_result.collection_name == collection_name_for(provider.model_info, hybrid=True)
+
+
+def test_hybrid_retrieval_surfaces_a_strong_sparse_weak_dense_match() -> None:
+    dense_vectors = {
+        "dense favorite but off topic": [1.0, 0.0, 0.0, 0.0],
+        "mentions bananas directly": [0.8, 0.2, 0.0, 0.0],
+        "bananas": [1.0, 0.0, 0.0, 0.0],
+    }
+    sparse_vectors = {
+        "dense favorite but off topic": SparseVector(indices=[1, 2], values=[0.1, 0.1]),
+        "mentions bananas directly": SparseVector(indices=[3], values=[5.0]),
+        "bananas": SparseVector(indices=[3], values=[5.0]),
+    }
+    provider = _StubEmbeddingProvider(dense_vectors, dimension=4)
+    sparse_provider = _StubSparseEmbeddingProvider(sparse_vectors)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    indexing = IndexingService(provider, repository, sparse_provider=sparse_provider)
+    indexing.index_document(
+        _make_document("doc-1"),
+        [
+            _make_chunk("a" * 64, "doc-1", 0, "dense favorite but off topic"),
+            _make_chunk("b" * 64, "doc-1", 1, "mentions bananas directly"),
+        ],
+    )
+
+    service = RetrievalService(provider, repository, sparse_provider=sparse_provider)
+    result = service.retrieve(
+        "bananas", document_id="doc-1", config=RetrievalConfig(max_overlap_ratio=1.0)
+    )
+
+    assert result.chunks[0].text == "mentions bananas directly"
+
+
+def test_reranker_still_applies_on_top_of_hybrid_retrieval() -> None:
+    texts = [
+        "dense favorite but off topic",
+        "less dense similarity but mentions bananas directly",
+    ]
+    dense_vectors = {
+        "dense favorite but off topic": [1.0, 0.0, 0.0, 0.0],
+        "less dense similarity but mentions bananas directly": [0.8, 0.2, 0.0, 0.0],
+        "bananas": [1.0, 0.0, 0.0, 0.0],
+    }
+    # Identical sparse vectors for both chunks: sparse can't discriminate
+    # between them, so if the reranker's ordering wins, that proves the
+    # reranker still runs on top of (not instead of) hybrid retrieval.
+    sparse_vectors = {text: SparseVector(indices=[1], values=[1.0]) for text in [*texts, "bananas"]}
+    provider = _StubEmbeddingProvider(dense_vectors, dimension=4)
+    sparse_provider = _StubSparseEmbeddingProvider(sparse_vectors)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    indexing = IndexingService(provider, repository, sparse_provider=sparse_provider)
+    indexing.index_document(
+        _make_document("doc-1"),
+        [_make_chunk(f"{i}" * 64, "doc-1", i, text) for i, text in enumerate(texts)],
+    )
+
+    service = RetrievalService(
+        provider, repository, reranker=FakeReranker(), sparse_provider=sparse_provider
+    )
+    result = service.retrieve(
+        "bananas", document_id="doc-1", config=RetrievalConfig(max_overlap_ratio=1.0)
+    )
+
+    assert result.chunks[0].text == "less dense similarity but mentions bananas directly"
+    assert all(chunk.reranker_score is not None for chunk in result.chunks)

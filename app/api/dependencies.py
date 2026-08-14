@@ -11,13 +11,14 @@ never requires torch to be installed.
 
 from functools import lru_cache
 
+from fastapi import Depends
 from qdrant_client import QdrantClient
 
 from app.core.config import Settings, get_settings
 from app.domain.chunk import ChunkingConfig
 from app.domain.llm import GenerationConfig, LlmError, LlmErrorCode
 from app.domain.retrieval import RetrievalConfig
-from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
+from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
 from app.services.chunking import ChunkingService
 from app.services.contextual_chunking import ChunkContextGenerator
 from app.services.document_pipeline import DocumentIngestionService
@@ -29,6 +30,7 @@ from app.services.lm_studio_provider import LMStudioProvider
 from app.services.rag_answer import RagAnswerService
 from app.services.reranker import Reranker
 from app.services.retrieval import RetrievalService
+from app.services.sparse_embedding_provider import SparseEmbeddingProvider
 
 
 def get_app_settings() -> Settings:
@@ -84,9 +86,45 @@ def get_context_generator() -> ChunkContextGenerator | None:
     )
 
 
+@lru_cache
+def get_sparse_embedding_provider() -> SparseEmbeddingProvider | None:
+    settings = get_settings()
+    if not settings.enable_hybrid_search:
+        return None
+    from app.services.bgem3_sparse_provider import Bgem3SparseEmbeddingProvider
+
+    return Bgem3SparseEmbeddingProvider(
+        model_id=settings.sparse_embedding_model_id, device=settings.sparse_embedding_device
+    )
+
+
+def get_active_collection_name(
+    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+) -> str:
+    """The one place that knows which collection the *current* config
+    actually reads/writes — hybrid vs. dense-only changes the collection
+    name (see collection_name_for), and every route handler that needs to
+    look up a document by id must agree with IndexingService on this, or a
+    document indexed in hybrid mode "doesn't exist" to a handler that
+    forgot the hybrid=... flag (a real bug caught by testing this feature
+    live: /questions 404'd on a document that actually existed).
+
+    embedding_provider is taken as a Depends(...) parameter rather than
+    called directly (unlike most other factories in this module) so that
+    tests overriding app.dependency_overrides[get_embedding_provider] are
+    respected here too — a plain get_embedding_provider() call inside the
+    function body would bypass that override entirely.
+    """
+    settings = get_settings()
+    return collection_name_for(embedding_provider.model_info, hybrid=settings.enable_hybrid_search)
+
+
 def get_indexing_service() -> IndexingService:
     return IndexingService(
-        get_embedding_provider(), get_chunk_repository(), get_context_generator()
+        get_embedding_provider(),
+        get_chunk_repository(),
+        get_context_generator(),
+        get_sparse_embedding_provider(),
     )
 
 
@@ -94,7 +132,6 @@ def get_document_ingestion_service() -> DocumentIngestionService:
     settings = get_settings()
     return DocumentIngestionService(
         validator=get_file_validator(),
-        embedding_provider=get_embedding_provider(),
         indexing_service=get_indexing_service(),
         chunking_config=ChunkingConfig(
             max_tokens=settings.chunking_max_tokens, overlap_tokens=settings.chunking_overlap_tokens
@@ -116,7 +153,12 @@ def get_reranker() -> Reranker | None:
 
 
 def get_retrieval_service() -> RetrievalService:
-    return RetrievalService(get_embedding_provider(), get_chunk_repository(), get_reranker())
+    return RetrievalService(
+        get_embedding_provider(),
+        get_chunk_repository(),
+        get_reranker(),
+        get_sparse_embedding_provider(),
+    )
 
 
 def get_retrieval_config() -> RetrievalConfig:

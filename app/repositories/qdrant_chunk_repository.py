@@ -11,6 +11,14 @@ Point IDs must be valid Qdrant IDs (UUID or unsigned int); a chunk's
 `chunk_id` (a SHA-256 hex digest) is deterministically mapped to a UUID
 derived from its first 32 hex characters, so the same chunk always maps to
 the same point and re-indexing safely overwrites rather than duplicates.
+
+Hybrid (dense+sparse) search uses a *separate* collection schema — named
+vectors ("dense"/"sparse") instead of one unnamed vector — so it needs its
+own ensure/upsert/search methods (ensure_hybrid_collection,
+upsert_chunks_hybrid, search_hybrid) rather than branching inside the
+existing dense-only ones. `collection_name_for(..., hybrid=True)` appends a
+`__hybrid` suffix so a document indexed both ways never mixes the two
+schemas in one collection.
 """
 
 import uuid
@@ -22,15 +30,18 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 
 from app.domain.chunk import Chunk
 from app.domain.document_summary import DocumentSummary
-from app.domain.embedding import EmbeddingModelInfo
+from app.domain.embedding import EmbeddingModelInfo, SparseVector
 from app.domain.indexing import IndexingError, IndexingErrorCode
 
 _QDRANT_CONNECTION_ERRORS = (ResponseHandlingException, UnexpectedResponse)
+_DENSE_VECTOR_NAME = "dense"
+_SPARSE_VECTOR_NAME = "sparse"
 
 
-def collection_name_for(model_info: EmbeddingModelInfo) -> str:
+def collection_name_for(model_info: EmbeddingModelInfo, hybrid: bool = False) -> str:
     sanitized_model_id = model_info.model_id.replace("/", "__")
-    return f"{sanitized_model_id}__v{model_info.schema_version}"
+    suffix = "__hybrid" if hybrid else ""
+    return f"{sanitized_model_id}__v{model_info.schema_version}{suffix}"
 
 
 def _chunk_point_id(chunk_id: str) -> str:
@@ -142,6 +153,149 @@ class QdrantChunkRepository:
             raise IndexingError(
                 IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
             ) from exc
+
+    # -- hybrid (dense + sparse) collection ------------------------------
+
+    def ensure_hybrid_collection(self, collection_name: str, dense_dimension: int) -> None:
+        """Same guarantee as ensure_collection, for the named-vector
+        dense+sparse schema hybrid search needs."""
+        try:
+            exists = self._client.collection_exists(collection_name)
+        except _QDRANT_CONNECTION_ERRORS as exc:
+            raise IndexingError(
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
+            ) from exc
+
+        if not exists:
+            self._client.create_collection(
+                collection_name=collection_name,
+                vectors_config={
+                    _DENSE_VECTOR_NAME: qm.VectorParams(
+                        size=dense_dimension, distance=qm.Distance.COSINE
+                    )
+                },
+                sparse_vectors_config={_SPARSE_VECTOR_NAME: qm.SparseVectorParams()},
+            )
+            self._client.create_payload_index(
+                collection_name=collection_name,
+                field_name="document_id",
+                field_schema=qm.PayloadSchemaType.KEYWORD,
+            )
+            return
+
+        info = self._client.get_collection(collection_name)
+        vectors_config = info.config.params.vectors
+        if not isinstance(vectors_config, dict) or _DENSE_VECTOR_NAME not in vectors_config:
+            raise IndexingError(
+                IndexingErrorCode.VECTOR_DIMENSION_MISMATCH,
+                f"Collection '{collection_name}' does not have the expected named "
+                f"'{_DENSE_VECTOR_NAME}'/'{_SPARSE_VECTOR_NAME}' hybrid vector configuration.",
+            )
+        existing_dimension = vectors_config[_DENSE_VECTOR_NAME].size
+        if existing_dimension != dense_dimension:
+            raise IndexingError(
+                IndexingErrorCode.VECTOR_DIMENSION_MISMATCH,
+                f"Collection '{collection_name}' contains {existing_dimension}-dimensional "
+                f"dense vectors, but a {dense_dimension}-dimensional vector was given.",
+            )
+
+    def upsert_chunks_hybrid(
+        self,
+        collection_name: str,
+        chunks: list[Chunk],
+        dense_vectors: list[list[float]],
+        sparse_vectors: list[SparseVector],
+    ) -> None:
+        if not (len(chunks) == len(dense_vectors) == len(sparse_vectors)):
+            raise ValueError("chunks, dense_vectors and sparse_vectors counts do not match")
+        if not chunks:
+            return
+
+        points = [
+            qm.PointStruct(
+                id=_chunk_point_id(chunk.chunk_id),
+                vector={
+                    _DENSE_VECTOR_NAME: dense_vector,
+                    _SPARSE_VECTOR_NAME: qm.SparseVector(
+                        indices=sparse_vector.indices, values=sparse_vector.values
+                    ),
+                },
+                payload={
+                    "chunk_id": chunk.chunk_id,
+                    "document_id": chunk.document_id,
+                    "filename": chunk.filename,
+                    "page_start": chunk.page_start,
+                    "page_end": chunk.page_end,
+                    "chunk_index": chunk.chunk_index,
+                    "section_title": chunk.section_title,
+                    "token_count": chunk.token_count,
+                    "text": chunk.text,
+                    "chunking_strategy": chunk.chunking_strategy,
+                    "chunking_version": chunk.chunking_version,
+                },
+            )
+            for chunk, dense_vector, sparse_vector in zip(
+                chunks, dense_vectors, sparse_vectors, strict=True
+            )
+        ]
+
+        try:
+            self._client.upsert(collection_name=collection_name, points=points)
+        except _QDRANT_CONNECTION_ERRORS as exc:
+            raise IndexingError(
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
+            ) from exc
+        except Exception as exc:
+            raise IndexingError(
+                IndexingErrorCode.UPSERT_FAILED, f"Chunk upsert failed: {exc}"
+            ) from exc
+
+    def search_hybrid(
+        self,
+        collection_name: str,
+        dense_query_vector: list[float],
+        sparse_query_vector: SparseVector,
+        document_id: str,
+        limit: int,
+    ) -> list[qm.ScoredPoint]:
+        """Dense + sparse search, combined server-side with Reciprocal Rank
+        Fusion (RRF). The returned `.score` is therefore a fused rank score,
+        not a cosine similarity — a `score_threshold` tuned against
+        search_similar's raw cosine output does not carry over to this.
+        """
+        document_filter = qm.Filter(
+            must=[qm.FieldCondition(key="document_id", match=qm.MatchValue(value=document_id))]
+        )
+        try:
+            response = self._client.query_points(
+                collection_name=collection_name,
+                prefetch=[
+                    qm.Prefetch(
+                        query=dense_query_vector,
+                        using=_DENSE_VECTOR_NAME,
+                        filter=document_filter,
+                        limit=limit,
+                    ),
+                    qm.Prefetch(
+                        query=qm.SparseVector(
+                            indices=sparse_query_vector.indices,
+                            values=sparse_query_vector.values,
+                        ),
+                        using=_SPARSE_VECTOR_NAME,
+                        filter=document_filter,
+                        limit=limit,
+                    ),
+                ],
+                query=qm.FusionQuery(fusion=qm.Fusion.RRF),
+                query_filter=document_filter,
+                limit=limit,
+                with_payload=True,
+            )
+        except _QDRANT_CONNECTION_ERRORS as exc:
+            raise IndexingError(
+                IndexingErrorCode.QDRANT_UNAVAILABLE, f"Could not reach Qdrant: {exc}"
+            ) from exc
+        return response.points
 
     def find_chunk_ids_by_document(self, collection_name: str, document_id: str) -> set[str]:
         try:

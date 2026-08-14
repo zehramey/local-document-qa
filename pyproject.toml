@@ -25,6 +25,9 @@ dev = [
 embeddings = [
     "sentence-transformers>=3.0,<4",
 ]
+hybrid = [
+    "FlagEmbedding>=1.2,<2",
+]
 ui = [
     "streamlit>=1.38,<1.39",
 ]

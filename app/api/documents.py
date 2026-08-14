@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from app.api.dependencies import (
+    get_active_collection_name,
     get_chunk_repository,
     get_document_ingestion_service,
-    get_embedding_provider,
     get_indexing_service,
 )
 from app.api.schemas import DocumentListResponse, DocumentSummaryResponse, DocumentUploadResponse
-from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
+from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
 from app.services.document_pipeline import DocumentIngestionService
-from app.services.embedding_provider import EmbeddingProvider
 from app.services.indexing import IndexingService
 
 router = APIRouter(tags=["documents"])
@@ -30,9 +29,8 @@ async def upload_document(
 @router.get("/documents", response_model=DocumentListResponse)
 def list_documents(
     repository: QdrantChunkRepository = Depends(get_chunk_repository),
-    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+    collection_name: str = Depends(get_active_collection_name),
 ) -> DocumentListResponse:
-    collection_name = collection_name_for(embedding_provider.model_info)
     summaries = repository.list_documents(collection_name)
     return DocumentListResponse(
         documents=[
@@ -51,9 +49,8 @@ def list_documents(
 def get_document(
     document_id: str,
     repository: QdrantChunkRepository = Depends(get_chunk_repository),
-    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+    collection_name: str = Depends(get_active_collection_name),
 ) -> DocumentSummaryResponse:
-    collection_name = collection_name_for(embedding_provider.model_info)
     summary = repository.get_document(collection_name, document_id)
     if summary is None:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -69,10 +66,9 @@ def get_document(
 def delete_document(
     document_id: str,
     repository: QdrantChunkRepository = Depends(get_chunk_repository),
-    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+    collection_name: str = Depends(get_active_collection_name),
     indexing_service: IndexingService = Depends(get_indexing_service),
 ) -> None:
-    collection_name = collection_name_for(embedding_provider.model_info)
     if repository.get_document(collection_name, document_id) is None:
         raise HTTPException(status_code=404, detail="Document not found.")
     indexing_service.delete_document(document_id)

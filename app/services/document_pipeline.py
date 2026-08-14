@@ -8,9 +8,7 @@ handles embedding + Qdrant upsert internally.
 
 from app.domain.chunk import ChunkingConfig
 from app.domain.document_summary import IngestionResult
-from app.repositories.qdrant_chunk_repository import collection_name_for
 from app.services.chunking import ChunkingService
-from app.services.embedding_provider import EmbeddingProvider
 from app.services.file_validation import FileValidator
 from app.services.filename_sanitizer import sanitize_filename
 from app.services.indexing import IndexingService
@@ -22,7 +20,6 @@ class DocumentIngestionService:
     def __init__(
         self,
         validator: FileValidator,
-        embedding_provider: EmbeddingProvider,
         indexing_service: IndexingService,
         chunking_config: ChunkingConfig,
         extraction_service: TextExtractionService | None = None,
@@ -33,7 +30,6 @@ class DocumentIngestionService:
         self._cleaning_service = cleaning_service or TextCleaningService()
         self._chunking_service = chunking_service or ChunkingService()
         self._chunking_config = chunking_config
-        self._embedding_provider = embedding_provider
         self._indexing_service = indexing_service
 
     def ingest(self, filename: str, content: bytes) -> IngestionResult:
@@ -52,6 +48,12 @@ class DocumentIngestionService:
             document_id=extraction_result.document.document_id,
             filename=extraction_result.document.filename,
             chunk_count=len(chunks),
-            collection_name=collection_name_for(self._embedding_provider.model_info),
+            # From IndexingService's own result, not recomputed here — it's
+            # the one place that already knows whether hybrid mode is on
+            # (see IndexingService._collection_name). Recomputing it
+            # independently was a real bug caught by testing this live: it
+            # silently disagreed with the collection IndexingService
+            # actually wrote to whenever hybrid search was enabled.
+            collection_name=indexing_result.collection_name,
             stale_chunks_removed=indexing_result.stale_chunks_removed,
         )

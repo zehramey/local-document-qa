@@ -32,7 +32,6 @@ def client(fake_provider: FakeEmbeddingProvider, repository: QdrantChunkReposito
     indexing_service = IndexingService(fake_provider, repository)
     ingestion_service = DocumentIngestionService(
         validator=FileValidator(FileValidationConfig(max_size_bytes=1024 * 1024)),
-        embedding_provider=fake_provider,
         indexing_service=indexing_service,
         chunking_config=ChunkingConfig(max_tokens=100, overlap_tokens=10),
     )

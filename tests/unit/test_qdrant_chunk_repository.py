@@ -1,6 +1,6 @@
 import pytest
 from app.domain.chunk import Chunk
-from app.domain.embedding import EmbeddingModelInfo
+from app.domain.embedding import EmbeddingModelInfo, SparseVector
 from app.domain.indexing import IndexingError, IndexingErrorCode
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
 from qdrant_client import QdrantClient
@@ -121,5 +121,117 @@ def test_qdrant_unavailable_raises_indexing_error() -> None:
 
     with pytest.raises(IndexingError) as exc_info:
         repository.ensure_collection("test_collection", vector_dimension=4)
+
+    assert exc_info.value.code == IndexingErrorCode.QDRANT_UNAVAILABLE
+
+
+# -- hybrid (dense + sparse) ---------------------------------------------
+
+
+def test_collection_name_hybrid_has_a_distinct_suffix() -> None:
+    model_info = EmbeddingModelInfo(
+        model_id="BAAI/bge-m3", revision="main", vector_dimension=1024, normalized=True
+    )
+
+    assert collection_name_for(model_info) == "BAAI__bge-m3__v1"
+    assert collection_name_for(model_info, hybrid=True) == "BAAI__bge-m3__v1__hybrid"
+
+
+def test_ensure_hybrid_collection_creates_named_dense_and_sparse_vectors(
+    repository: QdrantChunkRepository,
+) -> None:
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+
+    info = repository._client.get_collection("test_hybrid")
+    assert info.config.params.vectors["dense"].size == 4
+    assert info.config.params.vectors["dense"].distance.name == "COSINE"
+    assert "sparse" in info.config.params.sparse_vectors
+
+
+def test_ensure_hybrid_collection_is_idempotent(repository: QdrantChunkRepository) -> None:
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+
+    assert repository.count("test_hybrid") == 0
+
+
+def test_ensure_hybrid_collection_rejects_dimension_mismatch(
+    repository: QdrantChunkRepository,
+) -> None:
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+
+    with pytest.raises(IndexingError) as exc_info:
+        repository.ensure_hybrid_collection("test_hybrid", dense_dimension=8)
+
+    assert exc_info.value.code == IndexingErrorCode.VECTOR_DIMENSION_MISMATCH
+
+
+def test_upsert_chunks_hybrid_and_count(repository: QdrantChunkRepository) -> None:
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+    chunks = [_make_chunk(chunk_id="a" * 64), _make_chunk(chunk_id="b" * 64, chunk_index=1)]
+    dense_vectors = [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]]
+    sparse_vectors = [
+        SparseVector(indices=[1, 2], values=[0.5, 0.5]),
+        SparseVector(indices=[3], values=[1.0]),
+    ]
+
+    repository.upsert_chunks_hybrid("test_hybrid", chunks, dense_vectors, sparse_vectors)
+
+    assert repository.count("test_hybrid") == 2
+
+
+def test_search_hybrid_scopes_to_document_id(repository: QdrantChunkRepository) -> None:
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+    doc1_chunk = _make_chunk(chunk_id="a" * 64, document_id="doc-1")
+    doc2_chunk = _make_chunk(chunk_id="b" * 64, document_id="doc-2")
+    repository.upsert_chunks_hybrid(
+        "test_hybrid",
+        [doc1_chunk, doc2_chunk],
+        [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
+        [SparseVector(indices=[1], values=[1.0]), SparseVector(indices=[1], values=[1.0])],
+    )
+
+    results = repository.search_hybrid(
+        "test_hybrid", [1.0, 0.0, 0.0, 0.0], SparseVector(indices=[1], values=[1.0]), "doc-1", 10
+    )
+
+    assert {point.payload["chunk_id"] for point in results} == {"a" * 64}
+
+
+def test_search_hybrid_surfaces_a_strong_sparse_weak_dense_match(
+    repository: QdrantChunkRepository,
+) -> None:
+    """Mirrors the reranker test's intent (see test_retrieval_service.py's
+    test_reranker_reorders_results_while_preserving_dense_score): a chunk
+    that's a poor dense match but an exact sparse (lexical) match should
+    still be surfaced by RRF fusion, which is the whole point of hybrid
+    search over dense-only."""
+    repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
+    dense_favorite = _make_chunk(chunk_id="a" * 64, text="dense favorite but off topic")
+    sparse_favorite = _make_chunk(chunk_id="b" * 64, text="mentions bananas directly")
+    repository.upsert_chunks_hybrid(
+        "test_hybrid",
+        [dense_favorite, sparse_favorite],
+        [[1.0, 0.0, 0.0, 0.0], [0.8, 0.2, 0.0, 0.0]],
+        [SparseVector(indices=[1, 2], values=[0.1, 0.1]), SparseVector(indices=[3], values=[5.0])],
+    )
+
+    results = repository.search_hybrid(
+        "test_hybrid",
+        [1.0, 0.0, 0.0, 0.0],
+        SparseVector(indices=[3], values=[5.0]),
+        "doc-1",
+        limit=10,
+    )
+
+    assert results[0].payload["chunk_id"] == "b" * 64
+
+
+def test_hybrid_qdrant_unavailable_raises_indexing_error() -> None:
+    unreachable_client = QdrantClient(url="http://127.0.0.1:1", timeout=1)
+    repository = QdrantChunkRepository(unreachable_client)
+
+    with pytest.raises(IndexingError) as exc_info:
+        repository.ensure_hybrid_collection("test_hybrid", dense_dimension=4)
 
     assert exc_info.value.code == IndexingErrorCode.QDRANT_UNAVAILABLE

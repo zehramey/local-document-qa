@@ -15,6 +15,7 @@ from app.domain.document import Document
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
 from app.services.contextual_chunking import ChunkContextGenerator
 from app.services.embedding_provider import EmbeddingProvider
+from app.services.sparse_embedding_provider import SparseEmbeddingProvider
 
 
 @dataclass(frozen=True)
@@ -31,25 +32,41 @@ class IndexingService:
         provider: EmbeddingProvider,
         repository: QdrantChunkRepository,
         context_generator: ChunkContextGenerator | None = None,
+        sparse_provider: SparseEmbeddingProvider | None = None,
     ) -> None:
         self._provider = provider
         self._repository = repository
         self._context_generator = context_generator
+        self._sparse_provider = sparse_provider
 
     def index_document(
         self, document: Document, chunks: list[Chunk], document_text: str | None = None
     ) -> IndexingResult:
-        collection_name = collection_name_for(self._provider.model_info)
-        vector_dimension = self._provider.model_info.vector_dimension
-        self._repository.ensure_collection(collection_name, vector_dimension)
+        collection_name = self._collection_name()
+
+        if self._sparse_provider is not None:
+            self._repository.ensure_hybrid_collection(
+                collection_name, self._provider.model_info.vector_dimension
+            )
+        else:
+            self._repository.ensure_collection(
+                collection_name, self._provider.model_info.vector_dimension
+            )
 
         if not chunks:
             self._repository.delete_by_document_id(collection_name, document.document_id)
             return IndexingResult(collection_name, 0, 0, 0)
 
         embedding_texts = self._embedding_texts(chunks, document_text)
-        vectors = self._provider.embed_documents(embedding_texts)
-        self._repository.upsert_chunks(collection_name, chunks, vectors)
+        if self._sparse_provider is not None:
+            dense_vectors = self._provider.embed_documents(embedding_texts)
+            sparse_vectors = self._sparse_provider.embed_documents_sparse(embedding_texts)
+            self._repository.upsert_chunks_hybrid(
+                collection_name, chunks, dense_vectors, sparse_vectors
+            )
+        else:
+            vectors = self._provider.embed_documents(embedding_texts)
+            self._repository.upsert_chunks(collection_name, chunks, vectors)
 
         new_chunk_ids = {chunk.chunk_id for chunk in chunks}
         existing_chunk_ids = self._repository.find_chunk_ids_by_document(
@@ -70,8 +87,11 @@ class IndexingService:
         )
 
     def delete_document(self, document_id: str) -> None:
-        collection_name = collection_name_for(self._provider.model_info)
-        self._repository.delete_by_document_id(collection_name, document_id)
+        self._repository.delete_by_document_id(self._collection_name(), document_id)
+
+    def _collection_name(self) -> str:
+        is_hybrid = self._sparse_provider is not None
+        return collection_name_for(self._provider.model_info, hybrid=is_hybrid)
 
     def _embedding_texts(self, chunks: list[Chunk], document_text: str | None) -> list[str]:
         """What actually gets embedded — chunk.text itself stays untouched

@@ -11,6 +11,17 @@ class EmbeddingModelInfo:
     schema_version: str = "1"
 
 
+@dataclass(frozen=True)
+class SparseVector:
+    """A lexical/sparse embedding: token_id -> weight, given as two parallel
+    lists (indices, values) — the same shape Qdrant's own SparseVector uses,
+    so repository code can pass this through with no translation beyond
+    wrapping it in the qdrant-client type."""
+
+    indices: list[int]
+    values: list[float]
+
+
 class EmbeddingErrorCode(str, Enum):
     EMPTY_TEXT = "empty_text"
     MODEL_LOAD_FAILED = "model_load_failed"

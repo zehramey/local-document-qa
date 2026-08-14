@@ -4,6 +4,7 @@ from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, coll
 from app.services.contextual_chunking import FakeChunkContextGenerator
 from app.services.embedding_provider import FakeEmbeddingProvider
 from app.services.indexing import IndexingService
+from app.services.sparse_embedding_provider import FakeSparseEmbeddingProvider
 from qdrant_client import QdrantClient
 
 
@@ -164,3 +165,51 @@ def test_no_context_generator_embeds_chunk_text_unmodified() -> None:
     service.index_document(document, [chunk], document_text="the full document")
 
     assert provider.last_embedded_texts == ["plain chunk text"]
+
+
+def test_sparse_provider_indexes_into_a_separate_hybrid_collection() -> None:
+    provider = FakeEmbeddingProvider(vector_dimension=8)
+    sparse_provider = FakeSparseEmbeddingProvider()
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    dense_only_service = IndexingService(provider, repository)
+    hybrid_service = IndexingService(provider, repository, sparse_provider=sparse_provider)
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "chunk text")
+
+    dense_only_result = dense_only_service.index_document(document, [chunk])
+    hybrid_result = hybrid_service.index_document(document, [chunk])
+
+    assert dense_only_result.collection_name != hybrid_result.collection_name
+    assert hybrid_result.collection_name == collection_name_for(provider.model_info, hybrid=True)
+    assert repository.count(dense_only_result.collection_name) == 1
+    assert repository.count(hybrid_result.collection_name) == 1
+
+
+def test_sparse_provider_embeds_the_same_text_sent_to_the_dense_provider() -> None:
+    provider = FakeEmbeddingProvider(vector_dimension=8)
+    sparse_provider = FakeSparseEmbeddingProvider()
+    context_generator = FakeChunkContextGenerator(context="situating context")
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    service = IndexingService(provider, repository, context_generator, sparse_provider)
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "original chunk text")
+
+    service.index_document(document, [chunk], document_text="the full document")
+
+    expected = ["situating context\n\noriginal chunk text"]
+    assert provider.last_embedded_texts == expected
+    assert sparse_provider.last_embedded_texts == expected
+
+
+def test_delete_document_removes_hybrid_points_from_the_hybrid_collection() -> None:
+    provider = FakeEmbeddingProvider(vector_dimension=8)
+    sparse_provider = FakeSparseEmbeddingProvider()
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    service = IndexingService(provider, repository, sparse_provider=sparse_provider)
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "chunk text")
+    result = service.index_document(document, [chunk])
+
+    service.delete_document(document.document_id)
+
+    assert repository.count(result.collection_name) == 0

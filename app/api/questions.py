@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import (
+    get_active_collection_name,
     get_chunk_repository,
     get_default_rag_answer_service,
-    get_embedding_provider,
     get_generation_config,
     get_llm_provider,
     get_retrieval_config,
@@ -18,8 +18,7 @@ from app.api.schemas import (
 )
 from app.domain.llm import GenerationConfig
 from app.domain.retrieval import RetrievalConfig
-from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
-from app.services.embedding_provider import EmbeddingProvider
+from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
 from app.services.rag_answer import RagAnswerService
 from app.services.retrieval import RetrievalService
 
@@ -30,13 +29,12 @@ router = APIRouter(tags=["questions"])
 def ask_question(
     request: QuestionRequest,
     repository: QdrantChunkRepository = Depends(get_chunk_repository),
-    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+    collection_name: str = Depends(get_active_collection_name),
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     rag_service: RagAnswerService = Depends(get_default_rag_answer_service),
     retrieval_config: RetrievalConfig = Depends(get_retrieval_config),
     generation_config: GenerationConfig = Depends(get_generation_config),
 ) -> QuestionResponse:
-    collection_name = collection_name_for(embedding_provider.model_info)
     if repository.get_document(collection_name, request.document_id) is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 

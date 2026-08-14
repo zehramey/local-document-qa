@@ -19,6 +19,7 @@ from app.domain.retrieval import RetrievalConfig, RetrievalResult, RetrievedChun
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
 from app.services.embedding_provider import EmbeddingProvider
 from app.services.reranker import Reranker
+from app.services.sparse_embedding_provider import SparseEmbeddingProvider
 
 
 def _word_overlap_ratio(text_a: str, text_b: str) -> float:
@@ -38,20 +39,34 @@ class RetrievalService:
         embedding_provider: EmbeddingProvider,
         repository: QdrantChunkRepository,
         reranker: Reranker | None = None,
+        sparse_provider: SparseEmbeddingProvider | None = None,
     ) -> None:
         self._embedding_provider = embedding_provider
         self._repository = repository
         self._reranker = reranker
+        self._sparse_provider = sparse_provider
 
     def retrieve(self, query: str, document_id: str, config: RetrievalConfig) -> RetrievalResult:
-        collection_name = collection_name_for(self._embedding_provider.model_info)
+        collection_name = collection_name_for(
+            self._embedding_provider.model_info, hybrid=self._sparse_provider is not None
+        )
         query_vector = self._embedding_provider.embed_query(query)
 
-        raw_results = self._repository.search_similar(
-            collection_name, query_vector, document_id, config.top_k
-        )
+        if self._sparse_provider is not None:
+            sparse_query_vector = self._sparse_provider.embed_query_sparse(query)
+            raw_results = self._repository.search_hybrid(
+                collection_name, query_vector, sparse_query_vector, document_id, config.top_k
+            )
+        else:
+            raw_results = self._repository.search_similar(
+                collection_name, query_vector, document_id, config.top_k
+            )
 
         chunks = [self._to_retrieved_chunk(point) for point in raw_results]
+        # Under hybrid search, retrieval_score is Qdrant's fused RRF rank
+        # score, not a raw cosine similarity — a score_threshold calibrated
+        # against dense-only search_similar does not carry over to this
+        # (see QdrantChunkRepository.search_hybrid).
         chunks = self._apply_threshold(chunks, config.score_threshold)
         chunks = self._deduplicate_overlapping(chunks, config.max_overlap_ratio)
 
