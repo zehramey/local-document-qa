@@ -25,6 +25,21 @@ class Settings(BaseSettings):
     chunking_max_tokens: int = 500
     chunking_overlap_tokens: int = 75
 
+    # Off by default: unlike the reranker (a RAM/latency cost per query),
+    # this adds one extra LLM call per chunk at *ingestion* time (see
+    # app/services/contextual_chunking.py) — a 50-chunk document means 50
+    # extra local-LLM calls before it's searchable. Real retrieval-quality
+    # upside (Anthropic reports up to ~35%), but test it against your own
+    # documents before turning it on for anything time-sensitive.
+    enable_contextual_chunking: bool = False
+    # How much of the document (approximate tokens, from the start) is sent
+    # as context per chunk. Anthropic's technique uses the whole document,
+    # relying on prompt caching to keep that affordable; this project has no
+    # prompt-caching path for a local LLM server, so this is a deliberate
+    # leading-excerpt approximation instead, to keep per-chunk cost bounded.
+    contextual_chunking_doc_context_tokens: int = 2000
+    contextual_chunking_max_new_tokens: int = 100
+
     embedding_model_id: str = "BAAI/bge-m3"
     embedding_device: str = "cpu"
     embedding_batch_size: int = 32

@@ -56,6 +56,10 @@ class FakeEmbeddingProvider:
             vector_dimension=vector_dimension,
             normalized=normalized,
         )
+        # Recorded for tests that need to assert on what text was actually
+        # sent to embed_documents (e.g. contextual-chunking augmentation) —
+        # not used by the embedding logic itself.
+        self.last_embedded_texts: list[str] = []
 
     @property
     def model_info(self) -> EmbeddingModelInfo:
@@ -63,6 +67,7 @@ class FakeEmbeddingProvider:
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         ensure_non_empty_texts(texts)
+        self.last_embedded_texts = list(texts)
         return [self._embed_one(f"passage: {text}") for text in texts]
 
     def embed_query(self, text: str) -> list[float]:

@@ -43,7 +43,10 @@ class DocumentIngestionService:
         chunks = self._chunking_service.chunk_document(
             extraction_result.document, cleaned_pages, self._chunking_config
         )
-        indexing_result = self._indexing_service.index_document(extraction_result.document, chunks)
+        document_text = "\n\n".join(page.text for page in cleaned_pages)
+        indexing_result = self._indexing_service.index_document(
+            extraction_result.document, chunks, document_text=document_text
+        )
 
         return IngestionResult(
             document_id=extraction_result.document.document_id,

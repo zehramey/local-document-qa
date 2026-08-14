@@ -1,6 +1,7 @@
 from app.domain.chunk import Chunk
 from app.domain.document import Document, DocumentType
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
+from app.services.contextual_chunking import FakeChunkContextGenerator
 from app.services.embedding_provider import FakeEmbeddingProvider
 from app.services.indexing import IndexingService
 from qdrant_client import QdrantClient
@@ -120,3 +121,46 @@ def test_switching_embedding_model_uses_a_different_collection() -> None:
     assert result_b.collection_name == collection_name_for(provider_b.model_info)
     assert repository.count(result_a.collection_name) == 1
     assert repository.count(result_b.collection_name) == 1
+
+
+def test_context_generator_augments_embedded_text_but_not_stored_chunk_text() -> None:
+    provider = FakeEmbeddingProvider(vector_dimension=8)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    context_generator = FakeChunkContextGenerator(context="situating context")
+    service = IndexingService(provider, repository, context_generator)
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "original chunk text")
+
+    service.index_document(document, [chunk], document_text="the full document")
+
+    assert provider.last_embedded_texts == ["situating context\n\noriginal chunk text"]
+    assert context_generator.calls == [("the full document", "original chunk text")]
+    collection_name = collection_name_for(provider.model_info)
+    stored = repository.search_similar(
+        collection_name, provider.embed_query("original chunk text"), document.document_id, 1
+    )
+    assert stored[0].payload["text"] == "original chunk text"
+
+
+def test_context_generator_is_skipped_without_document_text() -> None:
+    provider = FakeEmbeddingProvider(vector_dimension=8)
+    repository = QdrantChunkRepository(QdrantClient(location=":memory:"))
+    context_generator = FakeChunkContextGenerator(context="situating context")
+    service = IndexingService(provider, repository, context_generator)
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "original chunk text")
+
+    service.index_document(document, [chunk])
+
+    assert provider.last_embedded_texts == ["original chunk text"]
+    assert context_generator.calls == []
+
+
+def test_no_context_generator_embeds_chunk_text_unmodified() -> None:
+    service, provider, _ = _make_service()
+    document = _make_document()
+    chunk = _make_chunk("a" * 64, document.document_id, 0, "plain chunk text")
+
+    service.index_document(document, [chunk], document_text="the full document")
+
+    assert provider.last_embedded_texts == ["plain chunk text"]

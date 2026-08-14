@@ -19,6 +19,7 @@ from app.domain.llm import GenerationConfig, LlmError, LlmErrorCode
 from app.domain.retrieval import RetrievalConfig
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository
 from app.services.chunking import ChunkingService
+from app.services.contextual_chunking import ChunkContextGenerator
 from app.services.document_pipeline import DocumentIngestionService
 from app.services.embedding_provider import EmbeddingProvider
 from app.services.file_validation import FileValidationConfig, FileValidator
@@ -70,8 +71,23 @@ def get_file_validator() -> FileValidator:
     return FileValidator(FileValidationConfig(max_size_bytes=settings.max_upload_size_bytes))
 
 
+def get_context_generator() -> ChunkContextGenerator | None:
+    settings = get_settings()
+    if not settings.enable_contextual_chunking:
+        return None
+    from app.services.contextual_chunking import LlmChunkContextGenerator
+
+    return LlmChunkContextGenerator(
+        llm=get_llm_provider(),
+        doc_context_tokens=settings.contextual_chunking_doc_context_tokens,
+        max_new_tokens=settings.contextual_chunking_max_new_tokens,
+    )
+
+
 def get_indexing_service() -> IndexingService:
-    return IndexingService(get_embedding_provider(), get_chunk_repository())
+    return IndexingService(
+        get_embedding_provider(), get_chunk_repository(), get_context_generator()
+    )
 
 
 def get_document_ingestion_service() -> DocumentIngestionService:

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from app.domain.chunk import Chunk
 from app.domain.document import Document
 from app.repositories.qdrant_chunk_repository import QdrantChunkRepository, collection_name_for
+from app.services.contextual_chunking import ChunkContextGenerator
 from app.services.embedding_provider import EmbeddingProvider
 
 
@@ -25,11 +26,19 @@ class IndexingResult:
 
 
 class IndexingService:
-    def __init__(self, provider: EmbeddingProvider, repository: QdrantChunkRepository) -> None:
+    def __init__(
+        self,
+        provider: EmbeddingProvider,
+        repository: QdrantChunkRepository,
+        context_generator: ChunkContextGenerator | None = None,
+    ) -> None:
         self._provider = provider
         self._repository = repository
+        self._context_generator = context_generator
 
-    def index_document(self, document: Document, chunks: list[Chunk]) -> IndexingResult:
+    def index_document(
+        self, document: Document, chunks: list[Chunk], document_text: str | None = None
+    ) -> IndexingResult:
         collection_name = collection_name_for(self._provider.model_info)
         vector_dimension = self._provider.model_info.vector_dimension
         self._repository.ensure_collection(collection_name, vector_dimension)
@@ -38,7 +47,8 @@ class IndexingService:
             self._repository.delete_by_document_id(collection_name, document.document_id)
             return IndexingResult(collection_name, 0, 0, 0)
 
-        vectors = self._provider.embed_documents([chunk.text for chunk in chunks])
+        embedding_texts = self._embedding_texts(chunks, document_text)
+        vectors = self._provider.embed_documents(embedding_texts)
         self._repository.upsert_chunks(collection_name, chunks, vectors)
 
         new_chunk_ids = {chunk.chunk_id for chunk in chunks}
@@ -62,3 +72,16 @@ class IndexingService:
     def delete_document(self, document_id: str) -> None:
         collection_name = collection_name_for(self._provider.model_info)
         self._repository.delete_by_document_id(collection_name, document_id)
+
+    def _embedding_texts(self, chunks: list[Chunk], document_text: str | None) -> list[str]:
+        """What actually gets embedded — chunk.text itself stays untouched
+        (see module docstring in contextual_chunking.py: the generated
+        context is an embedding-time-only augmentation, never persisted or
+        shown to a user)."""
+        if self._context_generator is None or not document_text:
+            return [chunk.text for chunk in chunks]
+        texts = []
+        for chunk in chunks:
+            context = self._context_generator.generate(document_text, chunk.text)
+            texts.append(f"{context}\n\n{chunk.text}" if context else chunk.text)
+        return texts
