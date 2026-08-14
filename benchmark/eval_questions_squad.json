@@ -10,32 +10,44 @@
         {
           "id": "5ad415fd604f3c001a40032b",
           "question": "What can the working fluid in a boiler cycle operate as?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "57114dfb50c2381900b54a56",
           "question": "What is the typical working fluid in a steam engine?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "water"
+          ]
         },
         {
           "id": "5ad415fd604f3c001a40032a",
           "question": "What is the typical working fluid in a vapor turbine?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "57114dfb50c2381900b54a55",
           "question": "What working fluid is used in a mercury vapor turbine?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Mercury"
+          ]
         },
         {
           "id": "5ad415fd604f3c001a400327",
           "question": "What happens to the working fluid in a chemistry system?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "57114dfb50c2381900b54a53",
           "question": "What happens to the working fluid in a closed loop system?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "recycled continuously"
+          ]
         }
       ]
     },
@@ -47,32 +59,48 @@
         {
           "id": "56e1b754cd28a01900c67abd",
           "question": "A complexity resource can also be described as what other type of resource?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "computational resource",
+            "computational"
+          ]
         },
         {
           "id": "5ad54b035b96ef001a10ac52",
           "question": "What can not be made for space requirements?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "56e1b754cd28a01900c67ac0",
           "question": "Decision tree is an example of what type of measure?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Complexity measures",
+            "complexity measures",
+            "complexity"
+          ]
         },
         {
           "id": "56e1b754cd28a01900c67abe",
           "question": "What is typically used to broadly define complexity measures?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Blum complexity axioms",
+            "the Blum complexity axioms"
+          ]
         },
         {
           "id": "5ad54b035b96ef001a10ac55",
           "question": "What are other complexity measures not used in complexity theory?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5ad54b035b96ef001a10ac56",
           "question": "What type of measure is communication complexity not an example of?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         }
       ]
     },
@@ -84,32 +112,49 @@
         {
           "id": "5728facd4b864d1900165171",
           "question": "What is a secondary goal of pleading not guilty?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "use the proceedings as a forum",
+            "use the proceedings as a forum to inform the jury and the public of the political circumstances",
+            "win an acquittal and avoid imprisonment",
+            "use the proceedings as a forum to inform the jury and the public of the political circumstances surrounding the case"
+          ]
         },
         {
           "id": "5728facd4b864d1900165172",
           "question": "What would someone who is civilly disobedient do in court?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "inform the jury and the public of the political circumstances",
+            "plead not guilty",
+            "inform the jury and the public"
+          ]
         },
         {
           "id": "5a66978af038b7001ab0c02c",
           "question": "What did the judge have to let the jurors know about in the Chicago Eight case?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5a66978af038b7001ab0c029",
           "question": "What kind of press coverage is there when defendants plead not guilty?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5a66978af038b7001ab0c02b",
           "question": "What plea was entered in the case the US v. Dougherty?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5728facd4b864d1900165173",
           "question": "What US war has a large amount of Civil Disobedients?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Vietnam War"
+          ]
         }
       ]
     },
@@ -121,32 +166,46 @@
         {
           "id": "5a590de93e1742001a15cf59",
           "question": "Where does extension occur?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "572671a5f1498d1400e8dfe8",
           "question": "What causes rock extension?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "normal faulting and through the ductile stretching and thinning",
+            "normal faulting"
+          ]
         },
         {
           "id": "5a57fe29770dc0001aeeff1b",
           "question": "Where can lower rocks of the Grand Canyon be seen?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "572671a5f1498d1400e8dfe4",
           "question": "This causes the rock unit as a whole to become longer and thinner. ",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Extension"
+          ]
         },
         {
           "id": "572671a5f1498d1400e8dfe6",
           "question": "Where can the entire sedimentary sequence of the Grand Canyon be seen in less than the length of a meter?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "within the Maria Fold and Thrust Belt",
+            "Maria Fold and Thrust Belt"
+          ]
         },
         {
           "id": "5a590de93e1742001a15cf58",
           "question": "How long is the Maria Fold?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         }
       ]
     },
@@ -158,32 +217,50 @@
         {
           "id": "5a551492134fea001a0e18e0",
           "question": "State educational and economic development where helped by what?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5726414e271a42140099d7e6",
           "question": "What completed the triad ",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "an interactive host to host connection was made between the IBM mainframe computer systems at the University of Michigan in Ann Arbor and Wayne State",
+            "the CDC mainframe at Michigan State University in East Lansing",
+            "1972 connections"
+          ]
         },
         {
           "id": "5a551492134fea001a0e18e3",
           "question": "What was eventual Merits role? ",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5a551492134fea001a0e18e4",
           "question": "How many joined the \"network\"? ",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5726414e271a42140099d7e5",
           "question": "WHy was the Merit network formed in Michigan ",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "as a means to help the state's educational and economic development",
+            "to explore computer networking between three of Michigan's public universities",
+            "explore computer networking"
+          ]
         },
         {
           "id": "5726414e271a42140099d7e7",
           "question": "What set the stage for Merits role in NSFNET",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "Ethernet attached hosts, and eventually TCP/IP and additional public universities in Michigan join the network",
+            "the network was enhanced",
+            "TCP/IP"
+          ]
         }
       ]
     },
@@ -195,32 +272,47 @@
         {
           "id": "571cca4add7acb1400e4c152",
           "question": "At first, what did oxygen and iron combine to form?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "banded iron formations",
+            "banded iron"
+          ]
         },
         {
           "id": "5ad25b1cd7d075001a428e68",
           "question": "What happened 3.7-2 billion years ago?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "5ad25b1cd7d075001a428e67",
           "question": "What eon took place between 3.3 and 2.0 billion years ago?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         },
         {
           "id": "571cca4add7acb1400e4c153",
           "question": "How long ago did oxygen reach 10% of its present level?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "1.7 billion years ago",
+            "around 1.7 billion years ago"
+          ]
         },
         {
           "id": "571cca4add7acb1400e4c150",
           "question": "When did photosynthetic organisms evolve on Earth?",
-          "expected_answerable": true
+          "expected_answerable": true,
+          "gold_answers": [
+            "3.5 billion years ago",
+            "about 3.5 billion years ago"
+          ]
         },
         {
           "id": "5ad25b1cd7d075001a428e66",
           "question": "What evolved 5.3 billion years ago?",
-          "expected_answerable": false
+          "expected_answerable": false,
+          "gold_answers": []
         }
       ]
     }

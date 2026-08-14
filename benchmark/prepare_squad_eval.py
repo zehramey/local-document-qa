@@ -7,6 +7,11 @@ variant when true — which maps directly onto this project's
 document (via POST /documents on a running API instance) with its own
 questions, unlike eval_questions.json's single-document Little Prince set.
 
+Each question also carries `gold_answers` — SQuAD's own annotator answer
+strings, deduplicated, empty for unanswerable questions (see
+_gold_answers()) — so compare_models.py can score answerable questions
+with EM/F1 instead of relying only on a human reading every row.
+
 This is English-only by design: it isolates "can the model do grounded RAG
 at all" from "can the model do it in Turkish", which a machine-translated
 Turkish variant (e.g. SQuAD-TR) would conflate — translation noise would
@@ -59,6 +64,24 @@ def _eligible_paragraphs(squad_data: dict, min_questions: int) -> list[dict]:
                     }
                 )
     return eligible
+
+
+def _gold_answers(q: dict) -> list[str]:
+    """Deduplicated reference answer strings for EM/F1-style auto-scoring.
+
+    Empty for is_impossible questions on purpose: SQuAD 2.0's "correct
+    answer" for those *is* the absence of an answer, which this project
+    already represents via expected_answerable=False and NOT_FOUND_PHRASE
+    (see app/services/rag_prompt.py) rather than any answer text.
+    """
+    if q["is_impossible"]:
+        return []
+    seen: list[str] = []
+    for answer in q["answers"]:
+        text = answer["text"].strip()
+        if text and text not in seen:
+            seen.append(text)
+    return seen
 
 
 def _select_questions(paragraph: dict, max_questions: int, rng: random.Random) -> list[dict]:
@@ -119,6 +142,7 @@ def build_eval_set(
                         "id": q["id"],
                         "question": q["question"],
                         "expected_answerable": not q["is_impossible"],
+                        "gold_answers": _gold_answers(q),
                     }
                     for q in questions
                 ],

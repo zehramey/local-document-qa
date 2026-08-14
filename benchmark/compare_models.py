@@ -13,13 +13,58 @@ Usage:
 import argparse
 import csv
 import json
+import re
+import string
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 
 BENCHMARK_DIR = Path(__file__).parent
+
+_ARTICLES_RE = re.compile(r"\b(a|an|the)\b")
+
+
+def _normalize_answer_text(text: str) -> str:
+    """Standard SQuAD normalization: lowercase, strip punctuation/articles,
+    collapse whitespace — so "It's Mercury." and "mercury" are the same
+    answer for scoring purposes."""
+    text = text.lower()
+    text = "".join(ch for ch in text if ch not in string.punctuation)
+    text = _ARTICLES_RE.sub(" ", text)
+    return " ".join(text.split())
+
+
+def _exact_match(prediction: str, gold_answers: list[str]) -> float:
+    if not gold_answers:
+        return 0.0
+    normalized_prediction = _normalize_answer_text(prediction)
+    return float(any(normalized_prediction == _normalize_answer_text(g) for g in gold_answers))
+
+
+def _f1(prediction: str, gold_answers: list[str]) -> float:
+    """Token-overlap F1 against each gold answer, keeping the best score —
+    the same metric SQuAD's own eval script uses."""
+    if not gold_answers:
+        return 0.0
+    prediction_tokens = _normalize_answer_text(prediction).split()
+    best = 0.0
+    for gold in gold_answers:
+        gold_tokens = _normalize_answer_text(gold).split()
+        if not prediction_tokens or not gold_tokens:
+            score = float(prediction_tokens == gold_tokens)
+        else:
+            num_same = sum((Counter(prediction_tokens) & Counter(gold_tokens)).values())
+            if num_same == 0:
+                score = 0.0
+            else:
+                precision = num_same / len(prediction_tokens)
+                recall = num_same / len(gold_tokens)
+                score = 2 * precision * recall / (precision + recall)
+        best = max(best, score)
+    return best
 
 
 def _documents_from_eval_set(eval_set: dict[str, object]) -> list[dict[str, object]]:
@@ -89,6 +134,15 @@ def run(api_base_url: str, models: list[str], questions_path: Path) -> list[dict
 
                 body = response.json()
                 metrics = body.get("metrics") or {}
+                # Only present for eval sets built by prepare_squad_eval.py;
+                # eval_questions.json's hand-authored set has no reference
+                # answer text to score against.
+                gold_answers = q.get("gold_answers", [])
+                exact_match = None
+                f1_score = None
+                if q["expected_answerable"] and gold_answers:
+                    exact_match = _exact_match(body["answer"], gold_answers)
+                    f1_score = _f1(body["answer"], gold_answers)
                 results.append(
                     {
                         "model_id": model_id,
@@ -97,7 +151,11 @@ def run(api_base_url: str, models: list[str], questions_path: Path) -> list[dict
                         "question": q["question"],
                         "expected_answerable": q["expected_answerable"],
                         "answerable": body["answerable"],
+                        "answerability_correct": body["answerable"] == q["expected_answerable"],
                         "answer": body["answer"],
+                        "gold_answers": gold_answers,
+                        "exact_match": exact_match,
+                        "f1_score": f1_score,
                         "citation_count": len(body["citations"]),
                         "rejected_citation_count": len(body["rejected_citation_ids"]),
                         "prompt_tokens": metrics.get("prompt_tokens"),
@@ -106,7 +164,12 @@ def run(api_base_url: str, models: list[str], questions_path: Path) -> list[dict
                         "tokens_per_second": metrics.get("tokens_per_second"),
                         "client_elapsed_seconds": round(client_elapsed, 2),
                         "error": None,
-                        # Filled in by hand after reading the answer.
+                        # exact_match/f1_score cover "was the answer text
+                        # right"; this is still worth filling in by hand for
+                        # nuance auto-scoring can't catch (citation quality,
+                        # a correct answer phrased so differently it scores
+                        # low on F1, refusals that are technically right but
+                        # unhelpful).
                         "human_correct": "",
                         "human_notes": "",
                     }
@@ -139,6 +202,36 @@ def write_outputs(results: list[dict[str, object]]) -> tuple[Path, Path]:
     return json_path, csv_path
 
 
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def print_summary(results: list[dict[str, object]]) -> None:
+    """Per-model aggregate: error rate, answerability accuracy, and mean
+    EM/F1 over the subset of rows that had gold_answers to score against."""
+    model_ids = sorted({row["model_id"] for row in results})
+    print("\nSummary:")
+    for model_id in model_ids:
+        rows = [row for row in results if row["model_id"] == model_id]
+        errors = [row for row in rows if row.get("error")]
+        scored = [row for row in rows if row.get("exact_match") is not None]
+        answerability = [row for row in rows if row.get("answerability_correct") is not None]
+
+        error_rate = len(errors) / len(rows)
+        answerability_accuracy = _mean(
+            [1.0 if row["answerability_correct"] else 0.0 for row in answerability]
+        )
+        mean_em = _mean([row["exact_match"] for row in scored])
+        mean_f1 = _mean([row["f1_score"] for row in scored])
+
+        print(f"  {model_id}:")
+        print(f"    error rate:              {error_rate:.0%} ({len(errors)}/{len(rows)})")
+        if answerability_accuracy is not None:
+            print(f"    answerability accuracy:  {answerability_accuracy:.0%}")
+        if mean_em is not None:
+            print(f"    mean EM / F1 (n={len(scored)}):    {mean_em:.2f} / {mean_f1:.2f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--models", required=True, help="Comma-separated model_ids to compare.")
@@ -153,6 +246,7 @@ def main() -> None:
     json_path, csv_path = write_outputs(results)
 
     print(f"\nWrote {len(results)} rows to:\n  {json_path}\n  {csv_path}")
+    print_summary(results)
 
 
 if __name__ == "__main__":
