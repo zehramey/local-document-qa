@@ -31,15 +31,28 @@ class Settings(BaseSettings):
 
     retrieval_top_k: int = 10
     llm_context_top_k: int = 5
+    # Deliberately left unset (None = no filtering). A plausible-sounding
+    # value (0.3, based on bge-m3's typical relevant-passage cosine range of
+    # ~0.4-0.7) was tried here and reverted: app/api/dependencies.py reads
+    # this setting directly (not overridden in tests), and it silently
+    # filtered out the FakeEmbeddingProvider's hash-derived test vectors in
+    # tests/unit/test_api.py, breaking retrieval for two tests. Real bge-m3
+    # vectors won't behave like that, but the failure is a reminder this
+    # value must be set from this app's own measured retrieval_score
+    # distribution (e.g. benchmark/compare_models.py runs), not a
+    # plausible-sounding guess.
     retrieval_score_threshold: float | None = None
     retrieval_max_overlap_ratio: float = 0.8
 
     reranker_model_id: str = "BAAI/bge-reranker-v2-m3"
     reranker_device: str = "cpu"
-    # Off by default: loading the reranker alongside the embedding model
-    # and the LLM was tight on this development machine's RAM (see Faz 6
-    # hardware notes, ~3.6GB free). Safe to enable where RAM allows.
-    enable_reranker: bool = False
+    # On by default: dense-only retrieval has no way to fix a
+    # topically-close-but-wrong-passage result, which the cross-encoder
+    # reranker corrects (see app/services/cross_encoder_reranker.py). Was
+    # off during Faz 6 because loading it alongside the embedding model and
+    # the LLM was tight on that development machine's ~3.6GB free RAM — set
+    # ENABLE_RERANKER=false in .env if the same constraint applies to you.
+    enable_reranker: bool = True
 
     llm_base_url: str = "http://localhost:1234"
     llm_model_id: str = "qwen/qwen3.5-4b"

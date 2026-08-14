@@ -6,13 +6,30 @@ skipping SSE parsing keeps this small. `time_to_first_token_seconds` is
 therefore always None (see app.domain.llm.GenerationMetrics).
 """
 
+import random
 import time
 
 import httpx
 
-from app.domain.llm import GenerationConfig, GenerationMetrics, GenerationResult, LlmError, LlmErrorCode
+from app.domain.llm import (
+    GenerationConfig,
+    GenerationMetrics,
+    GenerationResult,
+    LlmError,
+    LlmErrorCode,
+)
 
 _DEFAULT_GENERATION_EXTRA: dict[str, object] = {}
+# 429 (free-tier rate limit) and 5xx (transient upstream outage) are the
+# error classes actually observed against gemini-flash-latest during
+# benchmarking (see benchmark/results/results_20260814_081138.json — most
+# rows for this model failed with exactly these codes). Both are worth a
+# retry; other 4xx codes (400 bad request, 404 unknown model, ...) are not,
+# since retrying an invalid request just repeats the same failure.
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_MAX_ATTEMPTS = 5
+_BACKOFF_BASE_SECONDS = 1.0
+_BACKOFF_MAX_SECONDS = 20.0
 # Same failure mode we hit with qwen3.5 in LM Studio: current Gemini models
 # (tested against gemini-flash-latest -> gemini-3.6-flash) think by default
 # and that counts against maxOutputTokens, so a small budget can be spent
@@ -66,20 +83,7 @@ class GeminiProvider:
         }
 
         start = time.monotonic()
-        try:
-            response = httpx.post(
-                f"{self._base_url}/v1beta/models/{self._model_id}:generateContent",
-                params={"key": self._api_key},
-                json=payload,
-                timeout=config.timeout_seconds,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise LlmError(LlmErrorCode.TIMEOUT, f"LLM request timed out: {exc}") from exc
-        except httpx.HTTPError as exc:
-            raise LlmError(
-                LlmErrorCode.SERVER_UNAVAILABLE, f"Could not reach the LLM server: {exc}"
-            ) from exc
+        response = self._post_with_retry(payload, config.timeout_seconds)
         total_duration = time.monotonic() - start
 
         body = response.json()
@@ -88,7 +92,8 @@ class GeminiProvider:
             text = "".join(part.get("text", "") for part in candidate["content"]["parts"])
         except (KeyError, IndexError) as exc:
             raise LlmError(
-                LlmErrorCode.MALFORMED_RESPONSE, f"Gemini response is in an unexpected format: {body}"
+                LlmErrorCode.MALFORMED_RESPONSE,
+                f"Gemini response is in an unexpected format: {body}",
             ) from exc
 
         usage = body.get("usageMetadata", {})
@@ -110,3 +115,40 @@ class GeminiProvider:
                 tokens_per_second=tokens_per_second,
             ),
         )
+
+    def _post_with_retry(
+        self, payload: dict[str, object], timeout_seconds: float
+    ) -> httpx.Response:
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            if attempt > 0:
+                time.sleep(self._backoff_seconds(attempt))
+            try:
+                response = httpx.post(
+                    f"{self._base_url}/v1beta/models/{self._model_id}:generateContent",
+                    params={"key": self._api_key},
+                    json=payload,
+                    timeout=timeout_seconds,
+                )
+                response.raise_for_status()
+                return response
+            except httpx.TimeoutException as exc:
+                raise LlmError(LlmErrorCode.TIMEOUT, f"LLM request timed out: {exc}") from exc
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                if exc.response.status_code not in _RETRYABLE_STATUS_CODES:
+                    raise LlmError(
+                        LlmErrorCode.SERVER_UNAVAILABLE, f"Could not reach the LLM server: {exc}"
+                    ) from exc
+            except httpx.HTTPError as exc:
+                last_exc = exc
+
+        raise LlmError(
+            LlmErrorCode.SERVER_UNAVAILABLE,
+            f"Could not reach the LLM server after {_MAX_ATTEMPTS} attempts: {last_exc}",
+        ) from last_exc
+
+    @staticmethod
+    def _backoff_seconds(attempt: int) -> float:
+        exponential = min(_BACKOFF_BASE_SECONDS * (2.0 ** (attempt - 1)), _BACKOFF_MAX_SECONDS)
+        return exponential + random.uniform(0, 1.0)
